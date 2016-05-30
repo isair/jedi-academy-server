@@ -6,7 +6,7 @@ FS_GAME=base
 SERVER_CFG=server.cfg
 RTVRTM_CFG=rtvrtm.cfg
 
-docker rm -f ja
+docker rm -f ja 2>/dev/null
 
 docker run \
   -t=true \
@@ -19,4 +19,5 @@ docker run \
   -e SERVER_CFG="$SERVER_CFG" \
   -e RTVRTM_CFG="$RTVRTM_CFG" \
   --net=host \
+  -p "$NET_PORT" \
   bsencan/jedi-academy-server

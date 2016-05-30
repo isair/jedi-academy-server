@@ -5,21 +5,23 @@ MAINTAINER Baris Sencan <baris.sncn@gmail.com>
 EXPOSE 29060-29062/udp 29070-29081/udp
 
 # Install dependencies.
-RUN yum install -y glibc.i686
+RUN yum install -y glibc.i686 wget
+
+# Download and extract OpenJK.
+RUN wget https://builds.openjk.org/openjk-2016-04-13-0bbbccf2-linux-64.tar.gz -O /tmp/openjk.tar.gz
+RUN mkdir /tmp/openjk
+RUN tar zxvf /tmp/openjk.tar.gz -C /tmp/openjk
 
 # Copy server files.
-COPY server/libcxa.so.1 /usr/lib/libcxa.so.1
-COPY server/linuxjampded /opt/ja-server/linuxjampded
-COPY server/jampgamei386.so /opt/ja-server/jampgamei386.so
+RUN mkdir /opt/ja-server
+RUN cp -r /tmp/openjk/install/JediAcademy/* /opt/ja-server
 COPY server/start.sh /opt/ja-server/start.sh
 COPY server/rtvrtm.py /opt/rtvrtm/rtvrtm.py
 
-# Mount game data volume.
+# Clean up.
+RUN rm /tmp/openjk.tar.gz
+RUN rm -rf /tmp/openjk
+
+# Mount game data volume and start the server.
 VOLUME /jedi-academy
-
-# Set the working directory to where the Jedi Academy data files will be
-# mounted at, so that linuxjampded finds them.
-WORKDIR /jedi-academy
-
-# Start the server.
 CMD ["/opt/ja-server/start.sh"]

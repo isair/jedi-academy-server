@@ -5,9 +5,12 @@
 [ -z "$FS_GAME" ] && FS_GAME=base
 [ -z "$SERVER_CFG" ] && SERVER_CFG=server.cfg
 
-# Configuration files need to be under /root/.ja/base directory.
-mkdir -p /root/.ja/base
-cp /jedi-academy/*.cfg /root/.ja/base
+# Symlink directories under /jedi-academy to /root/.local/share/openjk.
+mkdir -p /root/.local/share/openjk
+find /jedi-academy -maxdepth 1 -mindepth 1 -type d -exec ln -s "{}" /root/.local/share/openjk \; 2>/dev/null
+
+# Configuration files need to be under /opt/ja-server/base directory.
+cp /jedi-academy/*.cfg /opt/ja-server/base
 
 # Shouldn't +set fs_game for base.
 SET_FS_GAME="+set fs_game $FS_GAME"
@@ -16,15 +19,15 @@ if [ "$FS_GAME" = base ]; then
 fi
 
 # If an rtvrtm configuration file has been defined and it exists, start rtvrtm.
-RTVRTM_CFG_PATH="/root/.ja/base/$RTVRTM_CFG"
+RTVRTM_CFG_PATH="/jedi-academy/$RTVRTM_CFG"
 if [ -f "$RTVRTM_CFG_PATH" ]; then
   cp /jedi-academy/*.txt /opt/rtvrtm
-  mv "$RTVRTM_CFG_PATH" /opt/rtvrtm/rtvrtm.cfg
+  cp "$RTVRTM_CFG_PATH" /opt/rtvrtm/rtvrtm.cfg
   (sleep 10; python /opt/rtvrtm/rtvrtm.py -c /opt/rtvrtm/rtvrtm.cfg) &
 fi
 
 # Start the server.
-/opt/ja-server/linuxjampded \
+/opt/ja-server/openjkded.x86_64 \
   +set dedicated 2 \
   +set net_port "$NET_PORT" \
   "$SET_FS_GAME" \
