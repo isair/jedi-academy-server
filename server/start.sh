@@ -8,6 +8,7 @@
 # Configuration files need to be under /root/.ja/base directory.
 mkdir -p /root/.ja/base
 cp /jedi-academy/*.cfg /root/.ja/base
+cp /jedi-academy/*.dat /root/.ja/base
 
 # Shouldn't +set fs_game for base.
 SET_FS_GAME="+set fs_game $FS_GAME"
