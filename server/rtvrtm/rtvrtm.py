@@ -13,10 +13,14 @@ from random import choice, sample
 from tarfile import open as TarFile
 from threading import Timer
 
+import re
+
 from config import Config
 from jaserver import JAServer
 from rcon import Rcon
 from features import Features
+from banManager import BanManager
+from player import Player
 
 VERSION = "4.0"
 SLEEP_INTERVAL = 0.075
@@ -193,8 +197,12 @@ def main(argv):
   recently_played = defaultdict(int)
   check_votes = voting_instructions = start_voting = start_second_turn = \
   reset = recover = start_line = False
+
   jaserver = JAServer(config.address, config.bindaddr, config.rcon_pwd)
   svsay = jaserver.rcon.svsay if not config.use_say_only else say
+
+  ban_manager = BanManager(jaserver, config)
+
   status = Features(svsay)
 
   if not config.rtv:
@@ -226,10 +234,18 @@ def main(argv):
         else:
           line = line[7:-1]
           if startswith(line, "ClientConnect: "):
-            players[int(line[15:17])] = [0, False, False, None, None] # Timer, RTV, RTM, Nomination, Vote Option.
+            player_id = int(line[15:17])
+            player_ip = re.findall(r'[0-9]+(?:\.[0-9]+){3}', line)[0]
+            players[player_id] = Player(player_id, player_ip)
+          elif startswith(line, "ClientUserinfoChanged: "):
+            player_id = int(line[23:25])
+            player = players.get(player_id)
+            if player is not None:
+              player.name = re.findall(r'n\\([^\\]*)', line)[0]
           elif startswith(line, "ClientDisconnect: "):
             try:
-              del players[int(line[18:])]
+              player_id = int(line[18:])
+              del players[player_id]
             except KeyError:
               pass
           elif startswith(line, "InitGame: "):
@@ -273,8 +289,6 @@ def main(argv):
                 "mode": [current_time, 0],
                 "map": [current_time, 0]
                }
-    players_values = players.itervalues
-    players_items = players.iteritems
 
     # Initial RTV/RTM calculation.
 
@@ -352,15 +366,28 @@ def main(argv):
             line = line[7:-1]
 
             if startswith(line, "ClientConnect: "):
-
               player_id = int(line[15:17])
-
+              player_ip = re.findall(r'[0-9]+(?:\.[0-9]+){3}', line)[0]
               if player_id not in players:
-
-                players[player_id] = [0, False, False, None, None] # Timer, RTV, RTM, Nomination, Vote Option.
+                players[player_id] = Player(player_id, player_ip)
                 rtv_players, rtm_players = [base if base else 1 for base in (((len(players) / 2) + 1) if not rate else
                                                                              int(round(((rate * len(players)) / 100.0)))
                                                                              for rate in (config.rtv_rate, config.rtm_rate))]
+            elif startswith(line, "ClientUserinfoChanged: "):
+              player_id = int(line[23:25])
+              player = players.get(player_id)
+
+              if player is not None:
+                player.name = re.findall(r'n\\([^\\]*)', line)[0]
+
+                ban_manager.check_player(player)
+
+                if config.name_protection: # Kick players using restricted nicknames.
+                  stripped_name = lower(strip(remove_color(player.name)))
+                  if stripped_name in ("admin", "server"):
+                    jaserver.rcon.say("^3Restricted nickname in use. Kicking player %i (^7%s^3)..."
+                                      % (player_id, player_name))
+                    jaserver.rcon.clientkick(player_id)
 
             elif startswith(line, "ClientDisconnect: "):
 
@@ -368,9 +395,9 @@ def main(argv):
 
               try:
 
-                if players[player_id][4]:
+                if players[player_id].vote_option:
 
-                  votes[players[player_id][4]][0] -= 1 # Remove -1 from the player's voted option.
+                  votes[players[player_id].vote_option][0] -= 1 # Remove -1 from the player's voted option.
 
                 if player_id in nomination_order:
 
@@ -417,11 +444,9 @@ def main(argv):
 
               if current_mode != cvars["g_authenticity"] or current_map != cvars["mapname"]:
 
-                players = dict((player_id, [timer, False, False, None, None])
-                               for (player_id, (timer, rtv_vote, rtm_vote, nomination, vote_option))
-                               in players_items()) # Reset players options with the exception of their timer.
-                players_values = players.itervalues
-                players_items = players.iteritems
+                for player in players.values():
+                  player.reset_voting_options()
+
                 nomination_order[:] = []
                 voting_description = change_instructions = None
                 admin_choices[:] = []
@@ -495,36 +520,6 @@ def main(argv):
 
                   change_instructions = recover = True
 
-            elif startswith(line, "ClientUserinfoChanged: "):
-
-              if config.name_protection: # Kick players using restricted nicknames.
-
-                line = line[23:]
-                player_id = int(line[:2])
-
-                try:
-
-                  player_name = index(line, " n\\")
-
-                except ValueError:
-
-                  try:
-
-                    player_name = index(line, "\\n\\")
-
-                  except ValueError:
-
-                    continue
-
-                player_name = line[(player_name + 3):]
-                player_name = player_name[:index(player_name, "\\")]
-
-                if lower(strip(remove_color(player_name))) in ("admin", "server"):
-
-                  jaserver.rcon.say("^3Restricted nickname in use. Kicking player %i (^7%s^3)..."
-                      % (player_id, player_name))
-                  jaserver.rcon.clientkick(player_id)
-
             elif startswith(line, "say: Admin: ") or startswith(line, "say: Server: "): # Admin commands (/smod say).
 
               if not recover:
@@ -548,6 +543,8 @@ def main(argv):
                     jaserver.bindaddr = config.bindaddr
                     jaserver.rcon_pwd = config.rcon_pwd
 
+                    ban_manager.update_list_from_file()
+
                     if not config.use_say_only:
 
                       svsay = status.svsay = jaserver.rcon.svsay
@@ -563,10 +560,8 @@ def main(argv):
                     svsay("^2[Status] ^7Rehash failed!")
 
                   print("[*] Resetting parameters..."),
-                  players = dict((player_id, [0, False, False, None, None])
-                                 for player_id in iter(players)) # Reset players data.
-                  players_values = players.itervalues
-                  players_items = players.iteritems
+                  for player in players.values():
+                    player.reset_voting_options(True)
                   nomination_order[:] = []
                   voting_description = change_instructions = None
                   admin_choices[:] = []
@@ -647,22 +642,16 @@ def main(argv):
 
                           if config.rtv:
 
-                            players = dict((player_id, [timer, True, rtm_vote, nomination, None])
-                                           for (player_id, (timer, rtv_vote, rtm_vote, nomination, vote_option))
-                                           in players_items()) # Force RTV for all connected players.
-                            players_values = players.itervalues
-                            players_items = players.iteritems
+                            for player in players.values():
+                              player.force_rtv(True)
                             check_votes = True
 
                         elif admin_cmd[1] == "rtm":
 
                           if config.rtm:
 
-                            players = dict((player_id, [timer, rtv_vote, True, nomination, None])
-                                           for (player_id, (timer, rtv_vote, rtm_vote, nomination, vote_option))
-                                           in players_items()) # Force RTM for all connected players.
-                            players_values = players.itervalues
-                            players_items = players.iteritems
+                            for player in players.values():
+                              player.force_rtm(True)
                             check_votes = True
 
                         elif admin_cmd[1] == "admin":
@@ -711,11 +700,8 @@ def main(argv):
                           disable_time = int(admin_cmd[2])
                           status.rtv = False
                           status.times[0] = (time() + disable_time) if disable_time else object()
-                          players = dict((player_id, [timer, False, rtm_vote, nomination, None])
-                                         for (player_id, (timer, rtv_vote, rtm_vote, nomination, vote_option))
-                                         in players_items()) # Reset RTV votes.
-                          players_values = players.itervalues
-                          players_items = players.iteritems
+                          for player in players.values():
+                            player.force_rtv(False)
 
                       elif admin_cmd[1] == "rtm" and config.rtm:
 
@@ -725,11 +711,8 @@ def main(argv):
                         disable_time = int(admin_cmd[2])
                         status.rtm = False
                         status.times[1] = (time() + disable_time) if disable_time else object()
-                        players = dict((player_id, [timer, rtv_vote, False, nomination, None])
-                                       for (player_id, (timer, rtv_vote, rtm_vote, nomination, vote_option))
-                                       in players_items()) # Reset RTM votes.
-                        players_values = players.itervalues
-                        players_items = players.iteritems
+                        for player in players.values():
+                          player.force_rtm(False)
 
                 elif admin_cmd == "!cancel":
 
@@ -740,11 +723,8 @@ def main(argv):
                       svsay("^2[Voting] ^7The %s voting was canceled!" % (voting_type))
                       print("CONSOLE: (%s) [Voting] The %s voting was canceled!" %
                             (strftime(timenow(), "%d/%m/%Y %H:%M:%S"), voting_type))
-                      players = dict((player_id, [timer, False, False, None, None])
-                                     for (player_id, (timer, rtv_vote, rtm_vote, nomination, vote_option))
-                                     in players_items()) # Reset players options with the exception of their timer.
-                      players_values = players.itervalues
-                      players_items = players.iteritems
+                      for player in players.values():
+                        player.reset_voting_options()
                       nomination_order[:] = []
                       voting_description = None
                       admin_choices[:] = []
@@ -785,19 +765,17 @@ def main(argv):
 
                 if config.roundlimit and players: # Initiate an automatic Roundlimit voting.
 
-                  nominated_maps = [nomination
-                                    for (timer, rtv_vote, rtm_vote, nomination, vote_option)
-                                    in players_values() if nomination]
+                  nominated_maps = [player.nomination for player in players.values() if player.nomination]
 
                   if config.nomination_type:
 
                     map_duplicates = defaultdict(bool)
-                    voting_maps = [(count(nominated_maps, players[player_id][3]),
-                                    (config.map_priority[0] if players[player_id][3] in config.maps else config.map_priority[1]),
-                                    players[player_id][3])
+                    voting_maps = [(count(nominated_maps, players[player_id].nomination),
+                                    (config.map_priority[0] if players[player_id].nomination in config.maps else config.map_priority[1]),
+                                    players[player_id].nomination)
                                    for player_id in iter(nomination_order)
-                                   if (players[player_id][3] not in map_duplicates and # Get nominations in nomination order without
-                                       not map_duplicates[players[player_id][3]])]     # duplicates and with the amount of nominations received.
+                                   if (players[player_id].nomination not in map_duplicates and # Get nominations in nomination order without
+                                       not map_duplicates[players[player_id].nomination])]     # duplicates and with the amount of nominations received.
                     sort(voting_maps, key=lambda nomination: nomination[0], reverse=True) # Re-order nominations by nomination count.
 
                     while len(voting_maps) > 5: # Reduce the number of maps to 5 for the voting.
@@ -838,8 +816,8 @@ def main(argv):
 
                   else:
 
-                    voting_maps = [((config.map_priority[0] if players[player_id][3] in config.maps else config.map_priority[1]),
-                                    players[player_id][3])
+                    voting_maps = [((config.map_priority[0] if players[player_id].nomination in config.maps else config.map_priority[1]),
+                                    players[player_id].nomination)
                                    for player_id in iter(nomination_order)]
 
                   missing_maps = (5 - len(voting_maps))
@@ -871,11 +849,9 @@ def main(argv):
                       svsay("^2[Roundlimit] ^7Roundlimit voting failed to start! No map is currently available.")
                       print("CONSOLE: (%s) [Roundlimit] Roundlimit voting failed to start! No map is currently available."
                             % (strftime(timenow(), "%d/%m/%Y %H:%M:%S")))
-                      players = dict((player_id, [timer, False, rtm_vote, None, None])
-                                     for (player_id, (timer, rtv_vote, rtm_vote, nomination, vote_option)) in
-                                     players_items()) # Reset RTV votes.
-                      players_values = players.itervalues
-                      players_items = players.iteritems
+                      for player in players.values():
+                        player.force_rtv(False)
+                        player.nomination = None
                       continue
 
                     append_map = voting_maps.append
@@ -940,19 +916,17 @@ def main(argv):
 
                 if config.timelimit and players: # Initiate an automatic Timelimit voting.
 
-                  nominated_maps = [nomination
-                                    for (timer, rtv_vote, rtm_vote, nomination, vote_option)
-                                    in players_values() if nomination]
+                  nominated_maps = [player.nomination for player in players.values() if player.nomination]
 
                   if config.nomination_type:
 
                     map_duplicates = defaultdict(bool)
-                    voting_maps = [(count(nominated_maps, players[player_id][3]),
-                                    (config.map_priority[0] if players[player_id][3] in config.maps else config.map_priority[1]),
-                                    players[player_id][3])
+                    voting_maps = [(count(nominated_maps, players[player_id].nomination),
+                                    (config.map_priority[0] if players[player_id].nomination in config.maps else config.map_priority[1]),
+                                    players[player_id].nomination)
                                    for player_id in iter(nomination_order)
-                                   if (players[player_id][3] not in map_duplicates and # Get nominations in nomination order without
-                                       not map_duplicates[players[player_id][3]])]     # duplicates and with the amount of nominations received.
+                                   if (players[player_id].nomination not in map_duplicates and # Get nominations in nomination order without
+                                       not map_duplicates[players[player_id].nomination])]     # duplicates and with the amount of nominations received.
                     sort(voting_maps, key=lambda nomination: nomination[0], reverse=True) # Re-order nominations by nomination count.
 
                     while len(voting_maps) > 5: # Reduce the number of maps to 5 for the voting.
@@ -993,8 +967,8 @@ def main(argv):
 
                   else:
 
-                    voting_maps = [((config.map_priority[0] if players[player_id][3] in config.maps else config.map_priority[1]),
-                                    players[player_id][3])
+                    voting_maps = [((config.map_priority[0] if players[player_id].nomination in config.maps else config.map_priority[1]),
+                                    players[player_id].nomination)
                                    for player_id in iter(nomination_order)]
 
                   missing_maps = (5 - len(voting_maps))
@@ -1026,11 +1000,9 @@ def main(argv):
                       svsay("^2[Timelimit] ^7Timelimit voting failed to start! No map is currently available.")
                       print("CONSOLE: (%s) [Timelimit] Timelimit voting failed to start! No map is currently available."
                             % (strftime(timenow(), "%d/%m/%Y %H:%M:%S")))
-                      players = dict((player_id, [timer, False, rtm_vote, None, None])
-                                     for (player_id, (timer, rtv_vote, rtm_vote, nomination, vote_option)) in
-                                     players_items()) # Reset RTV votes.
-                      players_values = players.itervalues
-                      players_items = players.iteritems
+                      for player in players.values():
+                        player.force_rtv(False)
+                        player.nomination = None
                       continue
 
                     append_map = voting_maps.append
@@ -1104,7 +1076,7 @@ def main(argv):
                   msg = lower(original_msg)
                   current_time = time()
 
-                  if players[player_id][0] <= current_time: # Flood protection.
+                  if players[player_id].timer <= current_time: # Flood protection.
 
                     if msg in ("rtv", "!rtv"):
 
@@ -1140,30 +1112,26 @@ def main(argv):
                         if not available_maps:
 
                           jaserver.rcon.say("^2[RTV] ^7Rock the vote is disabled because no map is currently available.")
-                          players = dict((player_id, [timer, False, rtm_vote, None, None])
-                                         for (player_id, (timer, rtv_vote, rtm_vote, nomination, vote_option))
-                                         in players_items()) # Reset RTV votes.
-                          players_values = players.itervalues
-                          players_items = players.iteritems
+                          for player in players.values():
+                            player.force_rtv(False)
+                            player.nomination = None
 
-                        elif players[player_id][1]:
+                        elif players[player_id].rtv:
 
                           jaserver.rcon.say("^2[RTV] ^7%s ^7already wanted to rock the vote (%i/%i)."
                               % (player_name,
-                                 sum((rtv_vote for (timer, rtv_vote, rtm_vote, nomination, vote_option)
-                                      in players_values())),
+                                 sum((player.rtv for player in players.values())),
                                  rtv_players))
 
                         else:
 
-                          players[player_id][1] = check_votes = True
+                          players[player_id].rtv = check_votes = True
                           svsay("^2[RTV] ^7%s ^7wants to rock the vote (%i/%i)."
                                 % (player_name,
-                                   sum((rtv_vote for (timer, rtv_vote, rtm_vote, nomination, vote_option)
-                                        in players_values())),
+                                   sum((player.rtv for player in players.values())),
                                    rtv_players))
 
-                      players[player_id][0] = (current_time + config.flood_protection)
+                      players[player_id].timer = (current_time + config.flood_protection)
 
                     elif msg in ("unrtv", "!unrtv"):
 
@@ -1199,30 +1167,25 @@ def main(argv):
                         if not available_maps:
 
                           jaserver.rcon.say("^2[RTV] ^7Rock the vote is disabled because no map is currently available.")
-                          players = dict((player_id, [timer, False, rtm_vote, None, None])
-                                         for (player_id, (timer, rtv_vote, rtm_vote, nomination, vote_option))
-                                         in players_items()) # Reset RTV votes.
-                          players_values = players.itervalues
-                          players_items = players.iteritems
+                          for player in players.values():
+                            player.reset_rtv()
 
-                        elif not players[player_id][1]:
+                        elif not players[player_id].rtv:
 
                           jaserver.rcon.say("^2[RTV] ^7%s ^7didn't want to rock the vote yet (%i/%i)."
                               % (player_name,
-                                 sum((rtv_vote for (timer, rtv_vote, rtm_vote, nomination, vote_option)
-                                      in players_values())),
+                                 sum((player.rtv for player in players.values())),
                                  rtv_players))
 
                         else:
 
-                          players[player_id][1] = False
+                          players[player_id].force_rtv(False)
                           svsay("^2[RTV] ^7%s ^7no longer wants to rock the vote (%i/%i)."
                                 % (player_name,
-                                   sum((rtv_vote for (timer, rtv_vote, rtm_vote, nomination, vote_option)
-                                        in players_values())),
+                                   sum((player.rtv for player in players.values())),
                                    rtv_players))
 
-                      players[player_id][0] = (current_time + config.flood_protection)
+                      players[player_id].timer = (current_time + config.flood_protection)
 
                     elif msg in ("rtm", "!rtm"):
 
@@ -1244,30 +1207,25 @@ def main(argv):
                       elif not [gamemode for gamemode in iter(config.rtm) if gamemode != current_mode]:
 
                         jaserver.rcon.say("^2[RTV] ^7Rock the mode is disabled because no mode is currently available.")
-                        players = dict((player_id, [timer, rtv_vote, False, nomination, None])
-                                       for (player_id, (timer, rtv_vote, rtm_vote, nomination, vote_option))
-                                       in players_items()) # Reset RTM votes.
-                        players_values = players.itervalues
-                        players_items = players.iteritems
+                        for player in players.values():
+                          player.force_rtm(False)
 
-                      elif players[player_id][2]:
+                      elif players[player_id].rtm:
 
                         jaserver.rcon.say("^2[RTM] ^7%s ^7already wanted to rock the mode (%i/%i)."
                             % (player_name,
-                               sum((rtm_vote for (timer, rtv_vote, rtm_vote, nomination, vote_option)
-                                    in players_values())),
+                               sum((player.rtm for player in players.values())),
                                rtm_players))
 
                       else:
 
-                        players[player_id][2] = check_votes = True
+                        players[player_id].rtm = check_votes = True
                         svsay("^2[RTM] ^7%s ^7wants to rock the mode (%i/%i)."
                               % (player_name,
-                                 sum((rtm_vote for (timer, rtv_vote, rtm_vote, nomination, vote_option)
-                                      in players_values())),
+                                 sum((player.rtm for player in players.values())),
                                  rtm_players))
 
-                      players[player_id][0] = (current_time + config.flood_protection)
+                      players[player_id].timer = (current_time + config.flood_protection)
 
                     elif msg in ("unrtm", "!unrtm"):
 
@@ -1289,30 +1247,25 @@ def main(argv):
                       elif not [gamemode for gamemode in iter(config.rtm) if gamemode != current_mode]:
 
                         jaserver.rcon.say("^2[RTV] ^7Rock the mode is disabled because no mode is currently available.")
-                        players = dict((player_id, [timer, rtv_vote, False, nomination, None])
-                                       for (player_id, (timer, rtv_vote, rtm_vote, nomination, vote_option))
-                                       in players_items()) # Reset RTM votes.
-                        players_values = players.itervalues
-                        players_items = players.iteritems
+                        for player in players.values():
+                          player.force_rtm(False)
 
-                      elif not players[player_id][2]:
+                      elif not players[player_id].rtm:
 
                         jaserver.rcon.say("^2[RTM] ^7%s ^7didn't want to rock the mode yet (%i/%i)."
                             % (player_name,
-                               sum((rtm_vote for (timer, rtv_vote, rtm_vote, nomination, vote_option)
-                                    in players_values())),
+                               sum((player.rtm for player in players.values())),
                                rtm_players))
 
                       else:
 
-                        players[player_id][2] = False
+                        players[player_id].rtm = False
                         svsay("^2[RTM] ^7%s ^7no longer wants to rock the mode (%i/%i)."
                               % (player_name,
-                                 sum((rtm_vote for (timer, rtv_vote, rtm_vote, nomination, vote_option)
-                                      in players_values())),
+                                 sum((player.rtm for player in players.values())),
                                  rtm_players))
 
-                      players[player_id][0] = (current_time + config.flood_protection)
+                      players[player_id].timer = (current_time + config.flood_protection)
 
                     elif msg in ("nominate", "!nominate"):
 
@@ -1328,7 +1281,7 @@ def main(argv):
 
                         jaserver.rcon.say("^2[Nominate] ^7Usage: %s mapname" % (original_msg))
 
-                      players[player_id][0] = (current_time + config.flood_protection)
+                      players[player_id].timer = (current_time + config.flood_protection)
 
                     elif startswith(msg, "nominate ") or startswith(msg, "!nominate "):
 
@@ -1345,9 +1298,7 @@ def main(argv):
                         nominated_map = lstrip(msg[9:])
                         compare_map = [mapname for mapname in iter(config.maps + config.secondary_maps)
                                        if lower(mapname) == nominated_map] # Compare nominated mapname against both map lists.
-                        nominated_maps = [nomination
-                                          for (timer, rtv_vote, rtm_vote, nomination, vote_option)
-                                          in players_values() if nomination]
+                        nominated_maps = [player.nomination for player in players.values() if player.nomination]
 
                         if config.nomination_type:
 
@@ -1369,7 +1320,7 @@ def main(argv):
 
                             nominations = count(nominated_maps, compare_map[0])
 
-                            if players[player_id][3] == compare_map[0]:
+                            if players[player_id].nomination == compare_map[0]:
 
                               jaserver.rcon.say("^2[Nominate] ^7%s ^7already nominated %s (%i nomination%s)."
                                   % (player_name, compare_map[0], nominations,
@@ -1379,7 +1330,7 @@ def main(argv):
 
                               nominations += 1
 
-                              if players[player_id][3]:
+                              if players[player_id].nomination:
 
                                 remove_nomination(player_id)
                                 svsay("^2[Nominate] ^7%s ^7nomination changed to %s (%i nomination%s)."
@@ -1392,10 +1343,10 @@ def main(argv):
                                       % (player_name, compare_map[0], nominations,
                                          ("" if nominations == 1 else "s")))
 
-                              players[player_id][3] = compare_map[0]
+                              players[player_id].nomination = compare_map[0]
                               add_nomination(player_id)
 
-                        elif len(nominated_maps) < 5 or players[player_id][3]:
+                        elif len(nominated_maps) < 5 or players[player_id].nomination:
 
                           if not compare_map:
 
@@ -1418,7 +1369,7 @@ def main(argv):
 
                           else:
 
-                            if players[player_id][3]:
+                            if players[player_id].nomination:
 
                               remove_nomination(player_id)
                               svsay("^2[Nominate] ^7%s ^7nomination changed to %s."
@@ -1429,14 +1380,14 @@ def main(argv):
                               svsay("^2[Nominate] ^7%s ^7nominated %s!"
                                     % (player_name, compare_map[0]))
 
-                            players[player_id][3] = compare_map[0]
+                            players[player_id].nomination = compare_map[0]
                             add_nomination(player_id)
 
                         else:
 
                           jaserver.rcon.say("^2[Nominate] ^7Maximum number of nominations (5) reached.")
 
-                      players[player_id][0] = (current_time + config.flood_protection)
+                      players[player_id].timer = (current_time + config.flood_protection)
 
                     elif msg in ("revoke", "!revoke"):
 
@@ -1448,7 +1399,7 @@ def main(argv):
 
                         jaserver.rcon.say("^2[Nominate] ^7Map nomination is unavailable because the number of maps is less than or equal 5.")
 
-                      elif not players[player_id][3]:
+                      elif not players[player_id].nomination:
 
                         jaserver.rcon.say("^2[Revoke] ^7%s ^7has no nominated map." %
                             (player_name))
@@ -1457,11 +1408,9 @@ def main(argv):
 
                         if config.nomination_type:
 
-                          nominations = (count([nomination
-                                                for (timer, rtv_vote, rtm_vote, nomination, vote_option)
-                                                in players_values()], players[player_id][3]) - 1)
+                          nominations = (count([player.nomination for player in players.values()], players[player_id].nomination) - 1)
                           svsay("^2[Revoke] ^7%s ^7nomination to %s was revoked (%i nomination%s)." %
-                                (player_name, players[player_id][3], nominations,
+                                (player_name, players[player_id].nomination, nominations,
                                  ("" if nominations == 1 else "s")))
 
                         else:
@@ -1469,10 +1418,10 @@ def main(argv):
                           svsay("^2[Revoke] ^7%s ^7nomination revoked!" %
                                 (player_name))
 
-                        players[player_id][3] = None
+                        players[player_id].nomination = None
                         remove_nomination(player_id)
 
-                      players[player_id][0] = (current_time + config.flood_protection)
+                      players[player_id].timer = (current_time + config.flood_protection)
 
                     elif msg in ("maplist", "!maplist"):
 
@@ -1493,9 +1442,7 @@ def main(argv):
 
                         if not config.nomination_type: # Remove nominated maps.
 
-                          nominated_maps = [nomination
-                                            for (timer, rtv_vote, rtm_vote, nomination, vote_option)
-                                            in players_values() if nomination]
+                          nominated_maps = [player.nomination for player in players.values() if player.nomination]
                           sorted_maps = (mapname for mapname in sorted_maps if mapname not in nominated_maps)
 
 # Create split lists for display in the server based on a maximum of MAPLIST_MAX_SIZE bytes per
@@ -1533,7 +1480,7 @@ def main(argv):
 
                           jaserver.rcon.say("^2[Maplist] ^7%s" % (join(", ", maplist[1])))
 
-                      players[player_id][0] = (current_time + config.flood_protection)
+                      players[player_id].timer = (current_time + config.flood_protection)
 
                     elif startswith(msg, "maplist ") or startswith(msg, "!maplist "):
 
@@ -1554,9 +1501,7 @@ def main(argv):
 
                         if not config.nomination_type: # Remove nominated maps.
 
-                          nominated_maps = [nomination
-                                            for (timer, rtv_vote, rtm_vote, nomination, vote_option)
-                                            in players_values() if nomination]
+                          nominated_maps = [player.nomination for player in players.values() if player.nomination]
                           sorted_maps = (mapname for mapname in sorted_maps if mapname not in nominated_maps)
 
 # Create split lists for display in the server based on a maximum of MAPLIST_MAX_SIZE bytes per
@@ -1597,7 +1542,7 @@ def main(argv):
                             jaserver.rcon.say("^2[Maplist] ^7Invalid map list number (Available map lists: %i)."
                                 % (len(maplist)))
 
-                      players[player_id][0] = (current_time + config.flood_protection)
+                      players[player_id].timer = (current_time + config.flood_protection)
 
                     elif msg in ("search", "!search"):
 
@@ -1613,7 +1558,7 @@ def main(argv):
 
                         jaserver.rcon.say("^2[Search] ^7Usage: %s expression" % (original_msg))
 
-                      players[player_id][0] = (current_time + config.flood_protection)
+                      players[player_id].timer = (current_time + config.flood_protection)
 
                     elif startswith(msg, "search ") or startswith(msg, "!search "):
 
@@ -1657,12 +1602,12 @@ def main(argv):
 
                             jaserver.rcon.say("^2[Search] ^7%s" % (maplist))
 
-                      players[player_id][0] = (current_time + config.flood_protection)
+                      players[player_id].timer = (current_time + config.flood_protection)
 
                     elif msg in ("elapsed", "!elapsed"):
 
                       jaserver.rcon.say("^2[Elapsed] ^7Usage: %s map/mode" % (original_msg))
-                      players[player_id][0] = (current_time + config.flood_protection)
+                      players[player_id].timer = (current_time + config.flood_protection)
 
                     elif startswith(msg, "elapsed ") or startswith(msg, "!elapsed "):
 
@@ -1680,12 +1625,12 @@ def main(argv):
 
                         jaserver.rcon.say("^2[Elapsed] ^7Incorrect format (map/mode).")
 
-                      players[player_id][0] = (current_time + config.flood_protection)
+                      players[player_id].timer = (current_time + config.flood_protection)
 
                     elif msg in ("nextgame", "!nextgame"):
 
                       jaserver.rcon.say("^2[Nextgame] ^7No next game is set.")
-                      players[player_id][0] = (current_time + config.flood_protection)
+                      players[player_id].timer = (current_time + config.flood_protection)
 
             elif not voting_instructions and not start_second_turn and not recover:
 
@@ -1713,17 +1658,17 @@ def main(argv):
 
                     else:
 
-                      if players[player_id][4]: # Vote change.
+                      if players[player_id].vote_option: # Vote change.
 
-                        votes[players[player_id][4]][0] -= 1 # Remove -1 from whichever option the player
+                        votes[players[player_id].vote_option][0] -= 1 # Remove -1 from whichever option the player
                                                              # previously voted for.
-                      players[player_id][4] = vote
+                      players[player_id].vote_option = vote
 
                   elif msg in ("unvote", "!unvote"):
 
                     try:
 
-                      votes[players[player_id][4]][0] -= 1 # Remove -1 from whichever option the player
+                      votes[players[player_id].vote_option][0] -= 1 # Remove -1 from whichever option the player
                                                            # voted for.
                     except KeyError:
 
@@ -1731,18 +1676,18 @@ def main(argv):
 
                     else:
 
-                      players[player_id][4] = None
+                      players[player_id].vote_option = None
 
                 elif change_instructions is not True:
 
                   current_time = time()
 
-                  if players[player_id][0] <= current_time: # Flood protection.
+                  if players[player_id].timer <= current_time: # Flood protection.
 
                     if msg in ("elapsed", "!elapsed"):
 
                       jaserver.rcon.say("^2[Elapsed] ^7Usage: %s map/mode" % (original_msg))
-                      players[player_id][0] = (current_time + config.flood_protection)
+                      players[player_id].timer = (current_time + config.flood_protection)
 
                     elif startswith(msg, "elapsed ") or startswith(msg, "!elapsed "):
 
@@ -1760,7 +1705,7 @@ def main(argv):
 
                         jaserver.rcon.say("^2[Elapsed] ^7Incorrect format (map/mode).")
 
-                      players[player_id][0] = (current_time + config.flood_protection)
+                      players[player_id].timer = (current_time + config.flood_protection)
 
                     elif msg in ("nextgame", "!nextgame"):
 
@@ -1768,28 +1713,25 @@ def main(argv):
                           (voting_type,
                            (change_instructions[0] if voting_type == "map" else
                             gamemodes[change_instructions[0]])))
-                      players[player_id][0] = (current_time + config.flood_protection)
+                      players[player_id].timer = (current_time + config.flood_protection)
 
             if check_votes:
 
               check_votes = False
 
-              if (sum((rtv_vote for (timer, rtv_vote, rtm_vote, nomination, vote_option)
-                       in players_values())) >= rtv_players): # Start a RTV voting.
+              if (sum((player.rtv for player in players.values())) >= rtv_players): # Start a RTV voting.
 
-                nominated_maps = [nomination
-                                  for (timer, rtv_vote, rtm_vote, nomination, vote_option)
-                                  in players_values() if nomination]
+                nominated_maps = [player.nomination for player in players.values() if player.nomination]
 
                 if config.nomination_type:
 
                   map_duplicates = defaultdict(bool)
-                  voting_maps = [(count(nominated_maps, players[player_id][3]),
-                                  (config.map_priority[0] if players[player_id][3] in config.maps else config.map_priority[1]),
-                                  players[player_id][3])
+                  voting_maps = [(count(nominated_maps, players[player_id].nomination),
+                                  (config.map_priority[0] if players[player_id].nomination in config.maps else config.map_priority[1]),
+                                  players[player_id].nomination)
                                  for player_id in iter(nomination_order)
-                                 if (players[player_id][3] not in map_duplicates and # Get nominations in nomination order without
-                                     not map_duplicates[players[player_id][3]])]     # duplicates and with the amount of nominations received.
+                                 if (players[player_id].nomination not in map_duplicates and # Get nominations in nomination order without
+                                     not map_duplicates[players[player_id].nomination])]     # duplicates and with the amount of nominations received.
                   sort(voting_maps, key=lambda nomination: nomination[0], reverse=True) # Re-order nominations by nomination count.
 
                   while len(voting_maps) > 5: # Reduce the number of maps to 5 for the voting.
@@ -1830,8 +1772,8 @@ def main(argv):
 
                 else:
 
-                  voting_maps = [((config.map_priority[0] if players[player_id][3] in config.maps else config.map_priority[1]),
-                                  players[player_id][3])
+                  voting_maps = [((config.map_priority[0] if players[player_id].nomination in config.maps else config.map_priority[1]),
+                                  players[player_id].nomination)
                                  for player_id in iter(nomination_order)]
 
                 missing_maps = (5 - len(voting_maps))
@@ -1863,15 +1805,11 @@ def main(argv):
                     svsay("^2[RTV] ^7Rock the vote failed to start! No map is currently available.")
                     print("CONSOLE: (%s) [RTV] Rock the vote failed to start! No map is currently available."
                           % (strftime(timenow(), "%d/%m/%Y %H:%M:%S")))
-                    players = dict((player_id, [timer, False, rtm_vote, None, None])
-                                   for (player_id, (timer, rtv_vote, rtm_vote, nomination, vote_option)) in
-                                   players_items()) # Reset RTV votes.
-                    players_values = players.itervalues
-                    players_items = players.iteritems
+                    for player in players.values():
+                      player.reset_rtv()
 
-                    if (sum((rtm_vote for (timer, rtv_vote, rtm_vote, nomination, vote_option)
-                             in players_values())) >= rtm_players): # Make sure RTM is checked even
-                                                                    # if RTV failed to start.
+                    if (sum((player.rtm for player in players.values())) >= rtm_players): # Make sure RTM is checked even
+                                                                                 # if RTV failed to start.
                       voting_modes = [gamemode for gamemode in iter(config.rtm) if gamemode != current_mode]
 
                       if not voting_modes:
@@ -1879,11 +1817,8 @@ def main(argv):
                         svsay("^2[RTM] ^7Rock the mode failed to start! No mode is currently available.")
                         print("CONSOLE: (%s) [RTM] Rock the mode failed to start! No mode is currently available."
                               % (strftime(timenow(), "%d/%m/%Y %H:%M:%S")))
-                        players = dict((player_id, [timer, rtv_vote, False, nomination, None])
-                                       for (player_id, (timer, rtv_vote, rtm_vote, nomination, vote_option))
-                                       in players_items()) # Reset RTM votes.
-                        players_values = players.itervalues
-                        players_items = players.iteritems
+                        for player in players.values():
+                          player.force_rtm(False)
 
                       else: # Create voting options.
 
@@ -1969,8 +1904,7 @@ def main(argv):
                 voting_change_immediately = config.rtv_change_immediately
                 status.rtv = status.rtm = voting_instructions = start_voting = True
 
-              elif (sum((rtm_vote for (timer, rtv_vote, rtm_vote, nomination, vote_option)
-                         in players_values())) >= rtm_players): # Start a RTM voting.
+              elif (sum((player.rtm for player in players.values())) >= rtm_players): # Start a RTM voting.
 
                 voting_modes = [gamemode for gamemode in iter(config.rtm) if gamemode != current_mode]
 
@@ -1979,11 +1913,8 @@ def main(argv):
                   svsay("^2[RTM] ^7Rock the mode failed to start! No mode is currently available.")
                   print("CONSOLE: (%s) [RTM] Rock the mode failed to start! No mode is currently available."
                         % (strftime(timenow(), "%d/%m/%Y %H:%M:%S")))
-                  players = dict((player_id, [timer, rtv_vote, False, nomination, None])
-                                 for (player_id, (timer, rtv_vote, rtm_vote, nomination, vote_option))
-                                 in players_items()) # Reset RTM votes.
-                  players_values = players.itervalues
-                  players_items = players.iteritems
+                  for player in players.values():
+                    player.force_rtm(False)
 
                 else: # Create voting options.
 
@@ -2067,11 +1998,8 @@ def main(argv):
                          votes[1][3]))
                 change_instructions = (votes[1][2], voting_wait_time, voting_s_wait_time)
 
-              players = dict((player_id, [timer, False, False, None, None])
-                             for (player_id, (timer, rtv_vote, rtm_vote, nomination, vote_option)) in
-                             players_items()) # Reset players options with the exception of their timer.
-              players_values = players.itervalues
-              players_items = players.iteritems
+              for player in players.values():
+                player.reset_voting_options()
               nomination_order[:] = []
               voting_description = None
               admin_choices[:] = []
@@ -2204,11 +2132,8 @@ def main(argv):
                 elif (voting_second_turn and most_voted <= (total_votes / 2) and
                       (most_voted + second_most_voted) != total_votes): # Prepare for second turn.
 
-                  players = dict((player_id, [timer, rtv_vote, rtm_vote, nomination, None])
-                                 for (player_id, (timer, rtv_vote, rtm_vote, nomination, vote_option)) in
-                                 players_items()) # Reset players votes.
-                  players_values = players.itervalues
-                  players_items = players.iteritems
+                  for player in players.values():
+                    player.vote_option = None
                   second_turn_options = [vote_id for (vote_id, (vote_count, priority, vote_value, vote_display_value))
                                          in votes_items() if vote_count == most_voted]
 
@@ -2379,11 +2304,8 @@ def main(argv):
 
                 status.rtv = status.rtm = start_voting = False
 
-              players = dict((player_id, [timer, False, False, None, None])
-                             for (player_id, (timer, rtv_vote, rtm_vote, nomination, vote_option)) in
-                             players_items()) # Reset players options with the exception of their timer.
-              players_values = players.itervalues
-              players_items = players.iteritems
+              for player in players.values():
+                player.reset_voting_options()
               nomination_order[:] = []
               voting_description = None
               admin_choices[:] = []
