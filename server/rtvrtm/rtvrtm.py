@@ -241,7 +241,10 @@ def main(argv):
             player_id = int(line[23:25])
             player = players.get(player_id)
             if player is not None:
-              player.name = re.findall(r'n\\([^\\]*)', line)[0]
+              try:
+                player.name = re.findall(r'n\\([^\\]*)', line)[0]
+              except Exception:
+                player.name = ""
           elif startswith(line, "ClientDisconnect: "):
             try:
               player_id = int(line[18:])
@@ -378,16 +381,12 @@ def main(argv):
               player = players.get(player_id)
 
               if player is not None:
-                player.name = re.findall(r'n\\([^\\]*)', line)[0]
+                try:
+                  player.name = re.findall(r'n\\([^\\]*)', line)[0]
+                except Exception:
+                  player.name = ""
 
                 ban_manager.check_player(player)
-
-                if config.name_protection: # Kick players using restricted nicknames.
-                  stripped_name = lower(strip(remove_color(player.name)))
-                  if stripped_name in ("admin", "server"):
-                    jaserver.rcon.say("^3Restricted nickname in use. Kicking player %i (^7%s^3)..."
-                                      % (player_id, player_name))
-                    jaserver.rcon.clientkick(player_id)
 
             elif startswith(line, "ClientDisconnect: "):
 
@@ -575,6 +574,46 @@ def main(argv):
                                                                                for rate in (config.rtv_rate, config.rtm_rate))]
                   recover = True
                   print("Done!\n")
+
+                elif startswith(admin_cmd, "!ban"):
+
+                  player_to_ban = None
+
+                  if startswith(admin_cmd, "!banid"):
+                    try:
+                      player_id = int(admin_cmd[7:].strip())
+                      player_to_ban = players.get(player_id)
+                    except Exception:
+                      jaserver.rcon.say("^2[Admin] ^7Invalid player id.")
+                  elif startswith(admin_cmd, "!banip"):
+                    player_ip = None
+                    try:
+                      player_ip = admin_cmd[7:].strip()
+                    except Exception as e:
+                      jaserver.rcon.say("^2[Admin] ^7Invalid player ip.")
+                    if player_ip is not None:
+                      for player in players.values():
+                        if player.ip == player_ip:
+                          player_to_ban = player
+                          break
+                  else:
+                    player_name = None
+                    try:
+                      player_name = strip(remove_color(admin_cmd[5:]))
+                    except Exception:
+                      player_name = ""
+                    if player_name == "":
+                      jaserver.rcon.say("^2[Admin] ^7Invalid player name.")
+                    else:
+                      for player in players.values():
+                        if lower(strip(remove_color(player.name))) == player_name:
+                          player_to_ban = player
+                          break
+
+                  if player_to_ban is not None:
+                    ban_manager.ban(player_to_ban)
+                  else:
+                    jaserver.rcon.say("^2[Admin] ^7No player with that info was found.")
 
                 elif not start_voting:
 
