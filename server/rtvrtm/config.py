@@ -3173,56 +3173,35 @@ class Config(object):
 # Connection test.
 
       for i in xrange(5):
-
         sock = socket(AF_INET, SOCK_DGRAM)
-
         try:
-
           bind(sock, (self._bindaddr, 0))
-
         except socketError:
-
           close(sock)
           warning("Bind address is unavailable.", rehash=True)
           return False
-
         try:
-
           settimeout(sock, 12)
           connect(sock, self._address)
-          sock.send("\xff\xff\xff\xffrcon %s sets RTVRTM %i/%s" % (self._rcon_pwd, cvar, VERSION))
+          sock.send("\xff\xff\xff\xffrcon %s status" % self.rcon_pwd)
           reply = lower(strip(sock.recv(1024)))
-
           if startswith(reply, "\xff\xff\xff\xffprint\nbad rconpassword"):
-
             warning("Incorrect rcon password.", rehash=True)
             return False
-
-          elif reply != "\xff\xff\xff\xffprint":
-
+          elif startswith(reply, "\xff\xff\xff\xffprint") == False:
             warning("Unexpected error while contacting server for the first time.", rehash=True)
             return False
-
           break
-
         except socketTimeout:
-
           if i == 4:
-
             warning("Could not contact the server after 5 tries (TIMEOUT).", rehash=True)
             return False
-
         except socketError:
-
           if i == 4:
-
             warning("Could not contact the server after 5 tries (REFUSED/UNREACHABLE).", rehash=True)
             return False
-
           sleep(12)
-
         finally:
-
           shutdown(sock, SHUT_RDWR)
           close(sock)
 
