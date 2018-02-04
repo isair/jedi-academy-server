@@ -1,53 +1,40 @@
 from __future__ import with_statement
 
+from fileConfigurable import ListFileConfigurable
+
+
 def remove_color(item):
-  """Remove Quake3 color codes from a str object."""
-  for i in xrange(10):
-    item = str.replace(item, "^%i" % (i), "")
-  return item
+    """Remove Quake3 color codes from a str object."""
+    for i in xrange(10):
+        item = str.replace(item, "^%i" % (i), "")
+    return item
 
-class BanManager(object):
-  """Maintains an IP list and auto-kicks banned IPs."""
 
-  def __init__(self, jaserver, config):
-    self.jaserver = jaserver
-    self.config = config
-    # TODO: Read this from the config
-    self.banListPath = "/jedi-academy/banIP.dat"
-    self.banList = []
-    self.update_list_from_file()
+class BanManager(ListFileConfigurable):
+    """Maintains an IP list and auto-kicks banned IPs."""
 
-  def update_list_from_file(self):
-    try:
-      with open(self.banListPath) as f:
-        self.banList = [line.strip() for line in f]
-    except Exception as e:
-      print("WARNING: Failed to read ban list at %s" % self.banListPath)
-      print(e)
+    def __init__(self, jaserver):
+        self.jaserver = jaserver
+        # TODO: Read path from the config
+        ListFileConfigurable.__init__(self, "/jedi-academy/banIP.dat")
 
-  def kick(self, player, kick_reason):
-    print("[BanManager] id: %d name: %s ip: %s kicked." % (player.id, player.name, player.ip))
-    self.jaserver.rcon.say("^7%s ^1has been kicked because %s." % (player.name, kick_reason))
-    self.jaserver.rcon.clientkick(player.id)
+    def kick(self, player, kick_reason):
+        print("[BanManager] id: %d name: %s ip: %s kicked." % (player.id, player.name, player.ip))
+        self.jaserver.say("^7%s ^1has been kicked because %s." % (player.name, kick_reason))
+        self.jaserver.clientkick(player.id)
 
-  def ban(self, player):
-    self.kick(player, "they are in the ban list")
-    if player.ip not in self.banList:
-      print("[BanManager] Ban list updated.")
-      self.banList.append(player.ip)
-      try:
-        with open(self.banListPath, "a") as f:
-          f.write(player.ip + "\n")
-      except Exception as e:
-        print("WARNING: Failed to write to ban list at %s" % self.banListPath)
-        print(e)
+    def ban(self, player):
+        self.kick(player, "they are in the ban list")
+        if player.ip not in self.list:
+            print("[BanManager] Ban list updated.")
+            self.list.append(player.ip)
+            self.synchronize()
 
-  def check_player(self, player):
-    # If player is in the ban list, call ban method on them again for the proper message.
-    if player.ip in self.banList:
-      self.ban(player)
-    # Check if their name is allowed. Only kick them if it's not.
-    if self.config.name_protection:
-      stripped_name = remove_color(player.name).lower().strip()
-      if stripped_name in ("admin", "server"):
-        self.kick(player, "they are trying to impersonate an admin")
+    def check_player(self, player):
+        # If player is in the ban list, call ban method on them again for the proper message.
+        if player.ip in self.list:
+            self.ban(player)
+        # Check if their name is allowed. Kick them if it's not.
+        clean_name = remove_color(player.name).lower().strip()
+        if clean_name in ("admin", "server"):
+            self.kick(player, "they are trying to impersonate an admin")
