@@ -1,5 +1,3 @@
-#!/usr/bin/python -uSOO
-
 from __future__ import with_statement
 
 import re
@@ -10,16 +8,17 @@ from os import fsync
 from os.path import getsize, basename, dirname, normpath, join as join_path
 from random import choice, sample
 from socket import socket, AF_INET, SOCK_DGRAM, SHUT_RDWR, timeout as socketTimeout, error as socketError
-from sys import platform, setcheckinterval, argv, exit
+from sys import platform, setcheckinterval, exit
 from tarfile import open as TarFile
 from time import time, sleep
 
-from banManager import BanManager
 from config import Config
 from features import Features
 from jaserver import JAServer
-from messageManager import MessageManager
-from player import Player
+from models.player import Player
+from parsers.file.catchUpLogFileParser import CatchUpLogFileParser
+from parsers.line.killLogLineParser import KillLogLineParser
+from utility import SortableDict, DummyTime, fix_line, remove_color, calculate_time
 
 VERSION = "4.0"
 SLEEP_INTERVAL = 0.075
@@ -44,45 +43,6 @@ def warning(msg, rehash=False):
     print("")
 
 
-class SortableDict(dict):
-    """Dictionary subclass that can return sorted items."""
-
-    def sorteditems(self):
-        return iter(sorted(self.iteritems()))
-
-
-class DummyTime(object):
-    """Dummy class to be used as a replacement for a float time object returned by time.time() on round-based votings."""
-
-    def __iadd__(self, *args):  # Operator overload will return the object itself without any changes
-        return self  # on assignment addition operations.
-
-
-def fix_line(line):
-    """Fix for the Client log line missing the \n (newline) character."""
-    startswith = str.startswith
-    split = str.split
-    while startswith(line[8:], "Client "):
-        line = split(line, ":", 3)
-        if len(line) < 4:  # If this bug is ever fixed within the MBII code,
-            return ""  # make sure this fix is not processed.
-        line[0] = int(line[0])  # Timestamp.
-        for i in xrange(-1, -7, -1):
-            substring = int(line[-2][i:])
-            if (substring - line[0]) >= 0 or line[-2][(i - 1)] == " ":
-                line = "%3i:%s" % (substring, line[-1])
-                break
-    return line
-
-
-def remove_color(item):
-    """Remove Quake3 color codes from a str object."""
-    replace = str.replace
-    for i in xrange(10):
-        item = replace(item, "^%i" % (i), "")
-    return item
-
-
 def switch_default(default_game, current_mode, current_map, jaserver):
     """Set default game whenever player count drops to 0."""
     if len(default_game) == 2:
@@ -97,20 +57,6 @@ def switch_default(default_game, current_mode, current_map, jaserver):
         jaserver.mbmode("%i %s" % (current_mode, default_game[0]))
         return True
     return False
-
-
-def calculate_time(time1, time2):
-    """Calculate time difference in hours:minutes:seconds format."""
-    minutes, seconds = divmod(int((time2 - time1)), 60)
-    hours, minutes = divmod(minutes, 60)
-    if hours:
-        time_type = "hour"
-    elif minutes:
-        time_type = "minute"
-    else:
-        time_type = "second"
-    return ("%02i:%02i:%02i %s%s" % (hours, minutes, seconds, time_type,
-                                     ("" if (hours + minutes + seconds) == 1 else "s")))
 
 
 def main(argv):
@@ -186,17 +132,15 @@ def main(argv):
 
     jaserver = JAServer(config.address, config.bindaddr, config.rcon_pwd, config.use_say_only)
 
-    ban_manager = BanManager(jaserver)
-    message_manager = MessageManager(jaserver)
+    kill_log_line_parser = KillLogLineParser(jaserver)
 
-    players = {}
     nomination_order = []
     admin_choices = []
     recently_played = defaultdict(int)
 
     voting_description = change_instructions = None
     check_votes = voting_instructions = start_voting = start_second_turn = \
-        reset = recover = start_line = False
+        reset = recover = start_line_exists = False
 
     status = Features(jaserver)
 
@@ -211,59 +155,21 @@ def main(argv):
     print("[*] Reading log file until EOF..."),
 
     with open(config.logfile, "rt+") as log:
-        seek = log.seek
-        truncate = log.truncate
-        flush = log.flush
-        fileno = log.fileno()
-
         # Do a fast iteration over the log file to avoid needing to make getinfo calls
         # to get the current status.
+        catch_up_log_parser = CatchUpLogFileParser(jaserver)
+        start_line_exists = catch_up_log_parser.parse(log)
 
-        for line in log:
-            if endswith(line, "\n"):  # Check for valid line.
-                line = fix_line(line)
-                if line == "  0:00 ------------------------------------------------------------\n":  # Server restart.
-                    players = {}
-                    cvars = None
-                    start_line = True
-                else:
-                    line = line[7:-1]
-                    if startswith(line, "ClientConnect: "):
-                        player_id = int(line[15:17])
-                        player_ip = re.findall(r'[0-9]+(?:\.[0-9]+){3}', line)[0]
-                        players[player_id] = Player(player_id, player_ip)
-                    elif startswith(line, "ClientUserinfoChanged: "):
-                        player_id = int(line[23:25])
-                        player = players.get(player_id)
-                        if player is not None:
-                            try:
-                                player.name = re.findall(r'n\\([^\\]*)', line)[0]
-                            except Exception:
-                                player.name = ""
-                    elif startswith(line, "ClientDisconnect: "):
-                        try:
-                            player_id = int(line[18:])
-                            del players[player_id]
-                        except KeyError:
-                            pass
-                    elif startswith(line, "InitGame: "):
-                        cvars = line
-
-        if not start_line:
+        # Sanity checks.
+        if not start_line_exists:
             error("Server start line was not detected. Please restart your server and turn RTV/RTM on.")
-        elif not cvars:
+        elif not jaserver.cvars:
             error("Lastest cvars values were not retrieved. Please try restarting RTV/RTM.")
 
-        del start_line
-        cvars = split(cvars[11:], "\\")
-        cvars = dict((lower(cvars[i]), cvars[i + 1]) for i in
-                     xrange(0, len(cvars), 2))  # Create cvar dictionary through the dict constructor.
-        cvars["g_authenticity"] = int(cvars["g_authenticity"])
-
-        jaserver.cvars = cvars
+        del start_line_exists
 
         try:
-            current_mode = cvars["g_authenticity"]
+            current_mode = jaserver.cvars["g_authenticity"]
             if current_mode not in (0, 1, 2, 3):
                 raise ValueError
         except KeyError:
@@ -272,19 +178,22 @@ def main(argv):
             error("Invalid value for game mode.")
 
         try:
-            current_map = cvars["mapname"]
+            current_map = jaserver.cvars["mapname"]
         except KeyError:
             error("No current map detected.")
 
         print("Done!")
 
+        # Print server status.
         try:
             print("[Server Status] Map: %s | Mode: %s | Players: %i/%i\n"
-                  % (current_map, jaserver.gamemodes[current_mode].title(), len(players), int(cvars["sv_maxclients"])))
+                  % (current_map, JAServer.gamemodes[current_mode].title(), len(jaserver.players),
+                     int(jaserver.cvars["sv_maxclients"])))
         except (KeyError, ValueError):
             print("[Server Status] Map: %s | Mode: %s | Players: %i\n"
-                  % (current_map, jaserver.gamemodes[current_mode].title(), len(players)))
+                  % (current_map, JAServer.gamemodes[current_mode].title(), len(jaserver.players)))
 
+        # Init stuff, init stuff, init stuff.
         current_map = lower(current_map)
         current_time = time()
         gameinfo = {  # Time of detection, extensions.
@@ -293,20 +202,25 @@ def main(argv):
         }
 
         # Initial RTV/RTM calculation.
-
-        rtv_players, rtm_players = [base if base else 1 for base in (((len(players) / 2) + 1) if not rate else
-                                                                     int(round(((rate * len(players)) / 100.0)))
+        rtv_players, rtm_players = [base if base else 1 for base in (((len(jaserver.players) / 2) + 1) if not rate else
+                                                                     int(round(
+                                                                         ((rate * len(jaserver.players)) / 100.0)))
                                                                      for rate in (config.rtv_rate, config.rtm_rate))]
 
-        if not players and config.default_game:
+        if not jaserver.players and config.default_game:
             reset = switch_default(config.default_game, current_mode, current_map, jaserver)
 
-        while (True):  # Infinite loop and parsing from here.
+        # Infinite loop and parsing from here.
+        while (True):
             # Ctrl+C or kill to close the process.
-            line = None
-            seek(0, 1)  # Seek relative to the pointer's current position.
+
+            log.seek(0, 1)  # Seek relative to the pointer's current position.
+            last_line = None
+
             # Intended to re-create the generator for the file descriptor.
             for line in log:
+
+                last_line = line
 
                 if endswith(line, "\n"):  # Check for valid line.
 
@@ -315,7 +229,7 @@ def main(argv):
                     if line == "  0:00 ------------------------------------------------------------\n":  # Server restart.
 
                         print("CONSOLE: (%s) Server restart detected!" % (strftime(timenow(), "%d/%m/%Y %H:%M:%S")))
-                        clear(players)
+                        clear(jaserver.players)
                         nomination_order[:] = []
                         current_map = current_mode = voting_description = change_instructions = None
                         admin_choices[:] = []
@@ -364,49 +278,49 @@ def main(argv):
                     else:
 
                         Check_Status()  # Check for the status of each feature (RTV/RTM).
-                        line = line[7:-1]
+                        snipped_line = line[7:-1]
 
-                        if startswith(line, "ClientConnect: "):
-                            player_id = int(line[15:17])
-                            player_ip = re.findall(r'[0-9]+(?:\.[0-9]+){3}', line)[0]
-                            if player_id not in players:
-                                players[player_id] = Player(player_id, player_ip)
+                        if startswith(snipped_line, "ClientConnect: "):
+                            player_id = int(snipped_line[15:17])
+                            player_ip = re.findall(r'[0-9]+(?:\.[0-9]+){3}', snipped_line)[0]
+                            if player_id not in jaserver.players:
+                                jaserver.players[player_id] = Player(player_id, player_ip)
                                 rtv_players, rtm_players = [base if base else 1 for base in
-                                                            (((len(players) / 2) + 1) if not rate else
-                                                             int(round(((rate * len(players)) / 100.0)))
+                                                            (((len(jaserver.players) / 2) + 1) if not rate else
+                                                             int(round(((rate * len(jaserver.players)) / 100.0)))
                                                              for rate in (config.rtv_rate, config.rtm_rate))]
-                        elif startswith(line, "ClientUserinfoChanged: "):
-                            player_id = int(line[23:25])
-                            player = players.get(player_id)
+                        elif startswith(snipped_line, "ClientUserinfoChanged: "):
+                            player_id = int(snipped_line[23:25])
+                            player = jaserver.players.get(player_id)
 
                             if player is not None:
                                 try:
-                                    player.name = re.findall(r'n\\([^\\]*)', line)[0]
+                                    player.name = re.findall(r'n\\([^\\]*)', snipped_line)[0]
                                 except Exception:
                                     player.name = ""
 
-                                ban_manager.check_player(player)
+                                jaserver.ban_manager.check_player(player)
 
-                        elif startswith(line, "ClientDisconnect: "):
+                        elif startswith(snipped_line, "ClientDisconnect: "):
 
-                            player_id = int(line[18:])
+                            player_id = int(snipped_line[18:])
 
                             try:
 
-                                if players[player_id].vote_option:
-                                    votes[players[player_id].vote_option][
+                                if jaserver.players[player_id].vote_option:
+                                    votes[jaserver.players[player_id].vote_option][
                                         0] -= 1  # Remove -1 from the player's voted option.
 
                                 if player_id in nomination_order:
                                     nomination_order.remove(player_id)
 
-                                del players[player_id]
+                                del jaserver.players[player_id]
                                 rtv_players, rtm_players = [base if base else 1 for base in
-                                                            (((len(players) / 2) + 1) if not rate else
-                                                             int(round(((rate * len(players)) / 100.0)))
+                                                            (((len(jaserver.players) / 2) + 1) if not rate else
+                                                             int(round(((rate * len(jaserver.players)) / 100.0)))
                                                              for rate in (config.rtv_rate, config.rtm_rate))]
 
-                                if not players:
+                                if not jaserver.players:
 
                                     voting_description = None
                                     admin_choices[:] = []
@@ -432,19 +346,24 @@ def main(argv):
 
                                 pass
 
-                        elif startswith(line, "InitGame: "):
+                        elif KillLogLineParser.can_parse(line):
 
-                            cvars = split(lower(line[11:]), "\\")
+                            kill_log_line_parser.parse(line)
+
+                        elif startswith(snipped_line, "InitGame: "):
+
+                            cvars = split(lower(snipped_line[11:]), "\\")
                             cvars = dict(cvars[i:i + 2] for i in xrange(0, len(cvars),
                                                                         2))  # Create cvar dictionary through the dict constructor.
                             cvars["g_authenticity"] = int(cvars["g_authenticity"])
 
                             jaserver.cvars = cvars
-                            message_manager.say_timed_messages()
+                            jaserver.message_manager.say_timed_messages()
 
-                            if current_mode != cvars["g_authenticity"] or current_map != cvars["mapname"]:
+                            if current_mode != jaserver.cvars["g_authenticity"] or current_map != jaserver.cvars[
+                                "mapname"]:
 
-                                for player in players.values():
+                                for player in jaserver.players.values():
                                     player.reset_voting_options()
 
                                 nomination_order[:] = []
@@ -463,14 +382,14 @@ def main(argv):
                                 voting_instructions = start_voting = start_second_turn = recover = False
                                 current_time = time()
 
-                                if current_mode != cvars["g_authenticity"]:
+                                if current_mode != jaserver.cvars["g_authenticity"]:
                                     gameinfo["mode"][0] = current_time
-                                    current_mode = cvars["g_authenticity"]
+                                    current_mode = jaserver.cvars["g_authenticity"]
 
-                                if current_map != cvars["mapname"]:
+                                if current_map != jaserver.cvars["mapname"]:
                                     recently_played[current_map] = (current_time + config.enable_recently_played)
                                     gameinfo["map"][0] = current_time
-                                    current_map = cvars["mapname"]
+                                    current_map = jaserver.cvars["mapname"]
 
                             elif start_voting:
 
@@ -497,13 +416,16 @@ def main(argv):
                                                 if voting_type == "admin":
                                                     jaserver.svsay("^2[Description] ^7%s" % (voting_description))
 
-                                                message_manager.say_voting_message(voting_name, voting_countdown,
-                                                                                   "round",
-                                                                                   sum((vote_count for (
-                                                                                       vote_count, priority, vote_value,
-                                                                                       vote_display_value) in
-                                                                                        votes_values())),
-                                                                                   len(players), votes_items)
+                                                jaserver.message_manager.say_voting_message(voting_name,
+                                                                                            voting_countdown,
+                                                                                            "round",
+                                                                                            sum((vote_count for (
+                                                                                                vote_count, priority,
+                                                                                                vote_value,
+                                                                                                vote_display_value) in
+                                                                                                 votes_values())),
+                                                                                            len(jaserver.players),
+                                                                                            votes_items)
                                                 voting_countdown -= 1
 
                                             else:
@@ -522,15 +444,15 @@ def main(argv):
 
                                     change_instructions = recover = True
 
-                        elif startswith(line, "say: Admin: ") or startswith(line,
-                                                                            "say: Server: "):  # Admin commands (/smod say).
+                        elif startswith(snipped_line, "say: Admin: ") or startswith(snipped_line,
+                                                                                    "say: Server: "):  # Admin parsers (/smod say).
 
                             if not recover:
 
-                                if startswith(line, "say: Admin: "):
-                                    original_admin_cmd = strip(remove_color(line[12:]))
-                                elif startswith(line, "say: Server: "):
-                                    original_admin_cmd = strip(remove_color(line[13:]))
+                                if startswith(snipped_line, "say: Admin: "):
+                                    original_admin_cmd = strip(remove_color(snipped_line[12:]))
+                                elif startswith(snipped_line, "say: Server: "):
+                                    original_admin_cmd = strip(remove_color(snipped_line[13:]))
                                 admin_cmd = lower(original_admin_cmd)
 
                                 if admin_cmd == "!rehash":  # Rehash configuration.
@@ -546,8 +468,8 @@ def main(argv):
                                         jaserver.bindaddr = config.bindaddr
                                         jaserver.rcon_pwd = config.rcon_pwd
 
-                                        ban_manager.load_configuration()
-                                        message_manager.load_configuration()
+                                        jaserver.ban_manager.load_configuration()
+                                        jaserver.message_manager.load_configuration()
 
                                         jaserver.svsay("^2[Status] ^7Rehash successful!")
 
@@ -556,7 +478,7 @@ def main(argv):
                                         jaserver.svsay("^2[Status] ^7Rehash failed!")
 
                                     print("[*] Resetting parameters..."),
-                                    for player in players.values():
+                                    for player in jaserver.players.values():
                                         player.reset_voting_options(True)
                                     nomination_order[:] = []
                                     voting_description = change_instructions = None
@@ -567,8 +489,8 @@ def main(argv):
                                     status.times[0] = 0 if config.rtv else object()
                                     status.times[1] = 0 if config.rtm else object()
                                     rtv_players, rtm_players = [base if base else 1 for base in
-                                                                (((len(players) / 2) + 1) if not rate else
-                                                                 int(round(((rate * len(players)) / 100.0)))
+                                                                (((len(jaserver.players) / 2) + 1) if not rate else
+                                                                 int(round(((rate * len(jaserver.players)) / 100.0)))
                                                                  for rate in (config.rtv_rate, config.rtm_rate))]
                                     recover = True
                                     print("Done!\n")
@@ -580,7 +502,7 @@ def main(argv):
                                     if startswith(admin_cmd, "!banid"):
                                         try:
                                             player_id = int(admin_cmd[7:].strip())
-                                            player_to_ban = players.get(player_id)
+                                            player_to_ban = jaserver.players.get(player_id)
                                         except Exception:
                                             jaserver.say("^2[Admin] ^7Invalid player id.")
                                     elif startswith(admin_cmd, "!banip"):
@@ -590,7 +512,7 @@ def main(argv):
                                         except Exception as e:
                                             jaserver.say("^2[Admin] ^7Invalid player ip.")
                                         if player_ip is not None:
-                                            for player in players.values():
+                                            for player in jaserver.players.values():
                                                 if player.ip == player_ip:
                                                     player_to_ban = player
                                                     break
@@ -603,13 +525,13 @@ def main(argv):
                                         if player_name == "":
                                             jaserver.say("^2[Admin] ^7Invalid player name.")
                                         else:
-                                            for player in players.values():
+                                            for player in jaserver.players.values():
                                                 if lower(strip(remove_color(player.name))) == player_name:
                                                     player_to_ban = player
                                                     break
 
                                     if player_to_ban is not None:
-                                        ban_manager.ban(player_to_ban)
+                                        jaserver.ban_manager.ban(player_to_ban)
                                     else:
                                         jaserver.say("^2[Admin] ^7No player with that info was found.")
 
@@ -684,7 +606,7 @@ def main(argv):
 
                                                     if config.rtv:
 
-                                                        for player in players.values():
+                                                        for player in jaserver.players.values():
                                                             player.force_rtv(True)
                                                         check_votes = True
 
@@ -692,7 +614,7 @@ def main(argv):
 
                                                     if config.rtm:
 
-                                                        for player in players.values():
+                                                        for player in jaserver.players.values():
                                                             player.force_rtm(True)
                                                         check_votes = True
 
@@ -751,7 +673,7 @@ def main(argv):
                                                     status.rtv = False
                                                     status.times[0] = (
                                                             time() + disable_time) if disable_time else object()
-                                                    for player in players.values():
+                                                    for player in jaserver.players.values():
                                                         player.force_rtv(False)
 
                                             elif admin_cmd[1] == "rtm" and config.rtm:
@@ -762,7 +684,7 @@ def main(argv):
                                                 disable_time = int(admin_cmd[2])
                                                 status.rtm = False
                                                 status.times[1] = (time() + disable_time) if disable_time else object()
-                                                for player in players.values():
+                                                for player in jaserver.players.values():
                                                     player.force_rtm(False)
 
                                 elif admin_cmd == "!cancel":
@@ -774,7 +696,7 @@ def main(argv):
                                             jaserver.svsay("^2[Voting] ^7The %s voting was canceled!" % (voting_type))
                                             print("CONSOLE: (%s) [Voting] The %s voting was canceled!" %
                                                   (strftime(timenow(), "%d/%m/%Y %H:%M:%S"), voting_type))
-                                            for player in players.values():
+                                            for player in jaserver.players.values():
                                                 player.reset_voting_options()
                                             nomination_order[:] = []
                                             voting_description = None
@@ -812,25 +734,25 @@ def main(argv):
 
                         elif not start_voting:
 
-                            if line == "Exit: Kill limit hit.":
+                            if snipped_line == "Exit: Kill limit hit.":
 
-                                if config.roundlimit and players:  # Initiate an automatic Roundlimit voting.
+                                if config.roundlimit and jaserver.players:  # Initiate an automatic Roundlimit voting.
 
-                                    nominated_maps = [player.nomination for player in players.values() if
+                                    nominated_maps = [player.nomination for player in jaserver.players.values() if
                                                       player.nomination]
 
                                     if config.nomination_type:
 
                                         map_duplicates = defaultdict(bool)
-                                        voting_maps = [(count(nominated_maps, players[player_id].nomination),
-                                                        (config.map_priority[0] if players[
+                                        voting_maps = [(count(nominated_maps, jaserver.players[player_id].nomination),
+                                                        (config.map_priority[0] if jaserver.players[
                                                                                        player_id].nomination in config.maps else
                                                          config.map_priority[1]),
-                                                        players[player_id].nomination)
+                                                        jaserver.players[player_id].nomination)
                                                        for player_id in iter(nomination_order)
-                                                       if (players[
+                                                       if (jaserver.players[
                                                                player_id].nomination not in map_duplicates and  # Get nominations in nomination order without
-                                                           not map_duplicates[players[
+                                                           not map_duplicates[jaserver.players[
                                                                player_id].nomination])]  # duplicates and with the amount of nominations received.
                                         sort(voting_maps, key=lambda nomination: nomination[0],
                                              reverse=True)  # Re-order nominations by nomination count.
@@ -879,10 +801,10 @@ def main(argv):
 
                                     else:
 
-                                        voting_maps = [((config.map_priority[0] if players[
+                                        voting_maps = [((config.map_priority[0] if jaserver.players[
                                                                                        player_id].nomination in config.maps else
                                                          config.map_priority[1]),
-                                                        players[player_id].nomination)
+                                                        jaserver.players[player_id].nomination)
                                                        for player_id in iter(nomination_order)]
 
                                     missing_maps = (5 - len(voting_maps))
@@ -918,7 +840,7 @@ def main(argv):
                                             print(
                                                     "CONSOLE: (%s) [Roundlimit] Roundlimit voting failed to start! No map is currently available."
                                                     % (strftime(timenow(), "%d/%m/%Y %H:%M:%S")))
-                                            for player in players.values():
+                                            for player in jaserver.players.values():
                                                 player.force_rtv(False)
                                                 player.nomination = None
                                             continue
@@ -982,25 +904,25 @@ def main(argv):
                                     voting_change_immediately = config.limit_change_immediately
                                     status.rtv = status.rtm = voting_instructions = start_voting = True
 
-                            elif line == "Exit: Timelimit hit.":
+                            elif snipped_line == "Exit: Timelimit hit.":
 
-                                if config.timelimit and players:  # Initiate an automatic Timelimit voting.
+                                if config.timelimit and jaserver.players:  # Initiate an automatic Timelimit voting.
 
-                                    nominated_maps = [player.nomination for player in players.values() if
+                                    nominated_maps = [player.nomination for player in jaserver.players.values() if
                                                       player.nomination]
 
                                     if config.nomination_type:
 
                                         map_duplicates = defaultdict(bool)
-                                        voting_maps = [(count(nominated_maps, players[player_id].nomination),
-                                                        (config.map_priority[0] if players[
+                                        voting_maps = [(count(nominated_maps, jaserver.players[player_id].nomination),
+                                                        (config.map_priority[0] if jaserver.players[
                                                                                        player_id].nomination in config.maps else
                                                          config.map_priority[1]),
-                                                        players[player_id].nomination)
+                                                        jaserver.players[player_id].nomination)
                                                        for player_id in iter(nomination_order)
-                                                       if (players[
+                                                       if (jaserver.players[
                                                                player_id].nomination not in map_duplicates and  # Get nominations in nomination order without
-                                                           not map_duplicates[players[
+                                                           not map_duplicates[jaserver.players[
                                                                player_id].nomination])]  # duplicates and with the amount of nominations received.
                                         sort(voting_maps, key=lambda nomination: nomination[0],
                                              reverse=True)  # Re-order nominations by nomination count.
@@ -1049,10 +971,10 @@ def main(argv):
 
                                     else:
 
-                                        voting_maps = [((config.map_priority[0] if players[
+                                        voting_maps = [((config.map_priority[0] if jaserver.players[
                                                                                        player_id].nomination in config.maps else
                                                          config.map_priority[1]),
-                                                        players[player_id].nomination)
+                                                        jaserver.players[player_id].nomination)
                                                        for player_id in iter(nomination_order)]
 
                                     missing_maps = (5 - len(voting_maps))
@@ -1088,7 +1010,7 @@ def main(argv):
                                             print(
                                                     "CONSOLE: (%s) [Timelimit] Timelimit voting failed to start! No map is currently available."
                                                     % (strftime(timenow(), "%d/%m/%Y %H:%M:%S")))
-                                            for player in players.values():
+                                            for player in jaserver.players.values():
                                                 player.force_rtv(False)
                                                 player.nomination = None
                                             continue
@@ -1152,20 +1074,21 @@ def main(argv):
                                     voting_change_immediately = config.limit_change_immediately
                                     status.rtv = status.rtm = voting_instructions = start_voting = True
 
-                            elif not recover:  # Standard commands.
+                            elif not recover:  # Standard parsers.
 
-                                line = split(line, ":", 2)
+                                snipped_line = split(snipped_line, ":", 2)
 
-                                if len(line) == 3 and isdigit(line[0]) and line[1] in (" say", " sayteam"):
+                                if len(snipped_line) == 3 and isdigit(snipped_line[0]) and snipped_line[1] in (
+                                        " say", " sayteam"):
 
-                                    player_id = int(line[0])
-                                    player_name, original_msg = split(line[2], '"', 1)
+                                    player_id = int(snipped_line[0])
+                                    player_name, original_msg = split(snipped_line[2], '"', 1)
                                     player_name = player_name[1:-2]
                                     original_msg = strip(remove_color(original_msg[:-1]))
                                     msg = lower(original_msg)
                                     current_time = time()
 
-                                    if players[player_id].timer <= current_time:  # Flood protection.
+                                    if jaserver.players[player_id].timer <= current_time:  # Flood protection.
 
                                         if msg in ("rtv", "!rtv"):
 
@@ -1203,27 +1126,28 @@ def main(argv):
 
                                                     jaserver.say(
                                                         "^2[RTV] ^7Rock the vote is disabled because no map is currently available.")
-                                                    for player in players.values():
+                                                    for player in jaserver.players.values():
                                                         player.force_rtv(False)
                                                         player.nomination = None
 
-                                                elif players[player_id].rtv:
+                                                elif jaserver.players[player_id].rtv:
 
                                                     jaserver.say(
                                                         "^2[RTV] ^7%s ^7already wanted to rock the vote (%i/%i)."
                                                         % (player_name,
-                                                           sum((player.rtv for player in players.values())),
+                                                           sum((player.rtv for player in jaserver.players.values())),
                                                            rtv_players))
 
                                                 else:
 
-                                                    players[player_id].rtv = check_votes = True
+                                                    jaserver.players[player_id].rtv = check_votes = True
                                                     jaserver.svsay("^2[RTV] ^7%s ^7wants to rock the vote (%i/%i)."
                                                                    % (player_name,
-                                                                      sum((player.rtv for player in players.values())),
+                                                                      sum((player.rtv for player in
+                                                                           jaserver.players.values())),
                                                                       rtv_players))
 
-                                            players[player_id].timer = (current_time + config.flood_protection)
+                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
 
                                         elif msg in ("unrtv", "!unrtv"):
 
@@ -1261,27 +1185,27 @@ def main(argv):
 
                                                     jaserver.say(
                                                         "^2[RTV] ^7Rock the vote is disabled because no map is currently available.")
-                                                    for player in players.values():
+                                                    for player in jaserver.players.values():
                                                         player.reset_rtv()
 
-                                                elif not players[player_id].rtv:
+                                                elif not jaserver.players[player_id].rtv:
 
                                                     jaserver.say(
                                                         "^2[RTV] ^7%s ^7didn't want to rock the vote yet (%i/%i)."
                                                         % (player_name,
-                                                           sum((player.rtv for player in players.values())),
+                                                           sum((player.rtv for player in jaserver.players.values())),
                                                            rtv_players))
 
                                                 else:
 
-                                                    players[player_id].force_rtv(False)
+                                                    jaserver.players[player_id].force_rtv(False)
                                                     jaserver.svsay(
                                                         "^2[RTV] ^7%s ^7no longer wants to rock the vote (%i/%i)."
                                                         % (player_name,
-                                                           sum((player.rtv for player in players.values())),
+                                                           sum((player.rtv for player in jaserver.players.values())),
                                                            rtv_players))
 
-                                            players[player_id].timer = (current_time + config.flood_protection)
+                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
 
                                         elif msg in ("rtm", "!rtm"):
 
@@ -1307,26 +1231,27 @@ def main(argv):
 
                                                 jaserver.say(
                                                     "^2[RTV] ^7Rock the mode is disabled because no mode is currently available.")
-                                                for player in players.values():
+                                                for player in jaserver.players.values():
                                                     player.force_rtm(False)
 
-                                            elif players[player_id].rtm:
+                                            elif jaserver.players[player_id].rtm:
 
                                                 jaserver.say(
                                                     "^2[RTM] ^7%s ^7already wanted to rock the mode (%i/%i)."
                                                     % (player_name,
-                                                       sum((player.rtm for player in players.values())),
+                                                       sum((player.rtm for player in jaserver.players.values())),
                                                        rtm_players))
 
                                             else:
 
-                                                players[player_id].rtm = check_votes = True
+                                                jaserver.players[player_id].rtm = check_votes = True
                                                 jaserver.svsay("^2[RTM] ^7%s ^7wants to rock the mode (%i/%i)."
                                                                % (player_name,
-                                                                  sum((player.rtm for player in players.values())),
+                                                                  sum((player.rtm for player in
+                                                                       jaserver.players.values())),
                                                                   rtm_players))
 
-                                            players[player_id].timer = (current_time + config.flood_protection)
+                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
 
                                         elif msg in ("unrtm", "!unrtm"):
 
@@ -1352,27 +1277,27 @@ def main(argv):
 
                                                 jaserver.say(
                                                     "^2[RTV] ^7Rock the mode is disabled because no mode is currently available.")
-                                                for player in players.values():
+                                                for player in jaserver.players.values():
                                                     player.force_rtm(False)
 
-                                            elif not players[player_id].rtm:
+                                            elif not jaserver.players[player_id].rtm:
 
                                                 jaserver.say(
                                                     "^2[RTM] ^7%s ^7didn't want to rock the mode yet (%i/%i)."
                                                     % (player_name,
-                                                       sum((player.rtm for player in players.values())),
+                                                       sum((player.rtm for player in jaserver.players.values())),
                                                        rtm_players))
 
                                             else:
 
-                                                players[player_id].rtm = False
+                                                jaserver.players[player_id].rtm = False
                                                 jaserver.svsay(
                                                     "^2[RTM] ^7%s ^7no longer wants to rock the mode (%i/%i)."
                                                     % (player_name,
-                                                       sum((player.rtm for player in players.values())),
+                                                       sum((player.rtm for player in jaserver.players.values())),
                                                        rtm_players))
 
-                                            players[player_id].timer = (current_time + config.flood_protection)
+                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
 
                                         elif msg in ("nominate", "!nominate"):
 
@@ -1389,7 +1314,7 @@ def main(argv):
 
                                                 jaserver.say("^2[Nominate] ^7Usage: %s mapname" % (original_msg))
 
-                                            players[player_id].timer = (current_time + config.flood_protection)
+                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
 
                                         elif startswith(msg, "nominate ") or startswith(msg, "!nominate "):
 
@@ -1409,7 +1334,8 @@ def main(argv):
                                                                iter(config.maps + config.secondary_maps)
                                                                if lower(
                                                         mapname) == nominated_map]  # Compare nominated mapname against both map lists.
-                                                nominated_maps = [player.nomination for player in players.values() if
+                                                nominated_maps = [player.nomination for player in
+                                                                  jaserver.players.values() if
                                                                   player.nomination]
 
                                                 if config.nomination_type:
@@ -1437,7 +1363,7 @@ def main(argv):
 
                                                         nominations = count(nominated_maps, compare_map[0])
 
-                                                        if players[player_id].nomination == compare_map[0]:
+                                                        if jaserver.players[player_id].nomination == compare_map[0]:
 
                                                             jaserver.say(
                                                                 "^2[Nominate] ^7%s ^7already nominated %s (%i nomination%s)."
@@ -1448,7 +1374,7 @@ def main(argv):
 
                                                             nominations += 1
 
-                                                            if players[player_id].nomination:
+                                                            if jaserver.players[player_id].nomination:
 
                                                                 nomination_order.remove(player_id)
                                                                 jaserver.svsay(
@@ -1463,10 +1389,10 @@ def main(argv):
                                                                     % (player_name, compare_map[0], nominations,
                                                                        ("" if nominations == 1 else "s")))
 
-                                                            players[player_id].nomination = compare_map[0]
+                                                            jaserver.players[player_id].nomination = compare_map[0]
                                                             nomination_order.append(player_id)
 
-                                                elif len(nominated_maps) < 5 or players[player_id].nomination:
+                                                elif len(nominated_maps) < 5 or jaserver.players[player_id].nomination:
 
                                                     if not compare_map:
 
@@ -1495,7 +1421,7 @@ def main(argv):
 
                                                     else:
 
-                                                        if players[player_id].nomination:
+                                                        if jaserver.players[player_id].nomination:
 
                                                             nomination_order.remove(player_id)
                                                             jaserver.svsay(
@@ -1507,7 +1433,7 @@ def main(argv):
                                                             jaserver.svsay("^2[Nominate] ^7%s ^7nominated %s!"
                                                                            % (player_name, compare_map[0]))
 
-                                                        players[player_id].nomination = compare_map[0]
+                                                        jaserver.players[player_id].nomination = compare_map[0]
                                                         nomination_order.append(player_id)
 
                                                 else:
@@ -1515,7 +1441,7 @@ def main(argv):
                                                     jaserver.say(
                                                         "^2[Nominate] ^7Maximum number of nominations (5) reached.")
 
-                                            players[player_id].timer = (current_time + config.flood_protection)
+                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
 
                                         elif msg in ("revoke", "!revoke"):
 
@@ -1528,7 +1454,7 @@ def main(argv):
                                                 jaserver.say(
                                                     "^2[Nominate] ^7Map nomination is unavailable because the number of maps is less than or equal 5.")
 
-                                            elif not players[player_id].nomination:
+                                            elif not jaserver.players[player_id].nomination:
 
                                                 jaserver.say("^2[Revoke] ^7%s ^7has no nominated map." %
                                                              (player_name))
@@ -1538,11 +1464,12 @@ def main(argv):
                                                 if config.nomination_type:
 
                                                     nominations = (count(
-                                                        [player.nomination for player in players.values()],
-                                                        players[player_id].nomination) - 1)
+                                                        [player.nomination for player in jaserver.players.values()],
+                                                        jaserver.players[player_id].nomination) - 1)
                                                     jaserver.svsay(
                                                         "^2[Revoke] ^7%s ^7nomination to %s was revoked (%i nomination%s)." %
-                                                        (player_name, players[player_id].nomination, nominations,
+                                                        (player_name, jaserver.players[player_id].nomination,
+                                                         nominations,
                                                          ("" if nominations == 1 else "s")))
 
                                                 else:
@@ -1550,10 +1477,10 @@ def main(argv):
                                                     jaserver.svsay("^2[Revoke] ^7%s ^7nomination revoked!" %
                                                                    (player_name))
 
-                                                players[player_id].nomination = None
+                                                jaserver.players[player_id].nomination = None
                                                 nomination_order.remove(player_id)
 
-                                            players[player_id].timer = (current_time + config.flood_protection)
+                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
 
                                         elif msg in ("maplist", "!maplist"):
 
@@ -1576,7 +1503,8 @@ def main(argv):
 
                                                 if not config.nomination_type:  # Remove nominated maps.
 
-                                                    nominated_maps = [player.nomination for player in players.values()
+                                                    nominated_maps = [player.nomination for player in
+                                                                      jaserver.players.values()
                                                                       if player.nomination]
                                                     sorted_maps = (mapname for mapname in sorted_maps if
                                                                    mapname not in nominated_maps)
@@ -1617,7 +1545,7 @@ def main(argv):
 
                                                     jaserver.say("^2[Maplist] ^7%s" % (join(", ", maplist[1])))
 
-                                            players[player_id].timer = (current_time + config.flood_protection)
+                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
 
                                         elif startswith(msg, "maplist ") or startswith(msg, "!maplist "):
 
@@ -1640,7 +1568,8 @@ def main(argv):
 
                                                 if not config.nomination_type:  # Remove nominated maps.
 
-                                                    nominated_maps = [player.nomination for player in players.values()
+                                                    nominated_maps = [player.nomination for player in
+                                                                      jaserver.players.values()
                                                                       if player.nomination]
                                                     sorted_maps = (mapname for mapname in sorted_maps if
                                                                    mapname not in nominated_maps)
@@ -1685,7 +1614,7 @@ def main(argv):
                                                             "^2[Maplist] ^7Invalid map list number (Available map lists: %i)."
                                                             % (len(maplist)))
 
-                                            players[player_id].timer = (current_time + config.flood_protection)
+                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
 
                                         elif msg in ("search", "!search"):
 
@@ -1702,7 +1631,7 @@ def main(argv):
 
                                                 jaserver.say("^2[Search] ^7Usage: %s expression" % (original_msg))
 
-                                            players[player_id].timer = (current_time + config.flood_protection)
+                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
 
                                         elif startswith(msg, "search ") or startswith(msg, "!search "):
 
@@ -1750,12 +1679,12 @@ def main(argv):
 
                                                         jaserver.say("^2[Search] ^7%s" % (maplist))
 
-                                            players[player_id].timer = (current_time + config.flood_protection)
+                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
 
                                         elif msg in ("elapsed", "!elapsed"):
 
                                             jaserver.say("^2[Elapsed] ^7Usage: %s map/mode" % (original_msg))
-                                            players[player_id].timer = (current_time + config.flood_protection)
+                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
 
                                         elif startswith(msg, "elapsed ") or startswith(msg, "!elapsed "):
 
@@ -1774,24 +1703,26 @@ def main(argv):
 
                                                 jaserver.say("^2[Elapsed] ^7Incorrect format (map/mode).")
 
-                                            players[player_id].timer = (current_time + config.flood_protection)
+                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
 
                                         elif msg in ("nextgame", "!nextgame"):
 
                                             jaserver.say("^2[Nextgame] ^7No next game is set.")
-                                            players[player_id].timer = (current_time + config.flood_protection)
+                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
 
                         elif not voting_instructions and not start_second_turn and not recover:
 
-                            line = split(line, ":", 2)
+                            snipped_line = split(snipped_line, ":", 2)
 
-                            if len(line) == 3 and isdigit(line[0]) and line[1] in (" say", " sayteam"):
+                            if len(snipped_line) == 3 and isdigit(snipped_line[0]) and snipped_line[1] in (
+                                    " say", " sayteam"):
 
-                                player_id = int(line[0])
-                                original_msg = strip(remove_color(line[2][(index(line[2], '"') + 1):-1]))
+                                player_id = int(snipped_line[0])
+                                original_msg = strip(
+                                    remove_color(snipped_line[2][(index(snipped_line[2], '"') + 1):-1]))
                                 msg = lower(original_msg)
 
-                                if not change_instructions:  # Voting related commands.
+                                if not change_instructions:  # Voting related parsers.
 
                                     if startswith(msg, "!") and isdigit(msg[1:]):
 
@@ -1807,18 +1738,18 @@ def main(argv):
 
                                         else:
 
-                                            if players[player_id].vote_option:  # Vote change.
+                                            if jaserver.players[player_id].vote_option:  # Vote change.
 
-                                                votes[players[player_id].vote_option][
+                                                votes[jaserver.players[player_id].vote_option][
                                                     0] -= 1  # Remove -1 from whichever option the player
                                                 # previously voted for.
-                                            players[player_id].vote_option = vote
+                                            jaserver.players[player_id].vote_option = vote
 
                                     elif msg in ("unvote", "!unvote"):
 
                                         try:
 
-                                            votes[players[player_id].vote_option][
+                                            votes[jaserver.players[player_id].vote_option][
                                                 0] -= 1  # Remove -1 from whichever option the player
                                             # voted for.
                                         except KeyError:
@@ -1827,18 +1758,18 @@ def main(argv):
 
                                         else:
 
-                                            players[player_id].vote_option = None
+                                            jaserver.players[player_id].vote_option = None
 
                                 elif change_instructions is not True:
 
                                     current_time = time()
 
-                                    if players[player_id].timer <= current_time:  # Flood protection.
+                                    if jaserver.players[player_id].timer <= current_time:  # Flood protection.
 
                                         if msg in ("elapsed", "!elapsed"):
 
                                             jaserver.say("^2[Elapsed] ^7Usage: %s map/mode" % (original_msg))
-                                            players[player_id].timer = (current_time + config.flood_protection)
+                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
 
                                         elif startswith(msg, "elapsed ") or startswith(msg, "!elapsed "):
 
@@ -1857,7 +1788,7 @@ def main(argv):
 
                                                 jaserver.say("^2[Elapsed] ^7Incorrect format (map/mode).")
 
-                                            players[player_id].timer = (current_time + config.flood_protection)
+                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
 
                                         elif msg in ("nextgame", "!nextgame"):
 
@@ -1865,28 +1796,30 @@ def main(argv):
                                                          (voting_type,
                                                           (change_instructions[0] if voting_type == "map" else
                                                            jaserver.gamemodes[change_instructions[0]].title())))
-                                            players[player_id].timer = (current_time + config.flood_protection)
+                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
 
                         if check_votes:
 
                             check_votes = False
 
-                            if (sum((player.rtv for player in players.values())) >= rtv_players):  # Start a RTV voting.
+                            if (sum((player.rtv for player in
+                                     jaserver.players.values())) >= rtv_players):  # Start a RTV voting.
 
-                                nominated_maps = [player.nomination for player in players.values() if player.nomination]
+                                nominated_maps = [player.nomination for player in jaserver.players.values() if
+                                                  player.nomination]
 
                                 if config.nomination_type:
 
                                     map_duplicates = defaultdict(bool)
-                                    voting_maps = [(count(nominated_maps, players[player_id].nomination),
-                                                    (config.map_priority[0] if players[
+                                    voting_maps = [(count(nominated_maps, jaserver.players[player_id].nomination),
+                                                    (config.map_priority[0] if jaserver.players[
                                                                                    player_id].nomination in config.maps else
                                                      config.map_priority[1]),
-                                                    players[player_id].nomination)
+                                                    jaserver.players[player_id].nomination)
                                                    for player_id in iter(nomination_order)
-                                                   if (players[
+                                                   if (jaserver.players[
                                                            player_id].nomination not in map_duplicates and  # Get nominations in nomination order without
-                                                       not map_duplicates[players[
+                                                       not map_duplicates[jaserver.players[
                                                            player_id].nomination])]  # duplicates and with the amount of nominations received.
                                     sort(voting_maps, key=lambda nomination: nomination[0],
                                          reverse=True)  # Re-order nominations by nomination count.
@@ -1934,10 +1867,10 @@ def main(argv):
 
                                 else:
 
-                                    voting_maps = [((config.map_priority[0] if players[
+                                    voting_maps = [((config.map_priority[0] if jaserver.players[
                                                                                    player_id].nomination in config.maps else
                                                      config.map_priority[1]),
-                                                    players[player_id].nomination)
+                                                    jaserver.players[player_id].nomination)
                                                    for player_id in iter(nomination_order)]
 
                                 missing_maps = (5 - len(voting_maps))
@@ -1972,11 +1905,11 @@ def main(argv):
                                         print(
                                                 "CONSOLE: (%s) [RTV] Rock the vote failed to start! No map is currently available."
                                                 % (strftime(timenow(), "%d/%m/%Y %H:%M:%S")))
-                                        for player in players.values():
+                                        for player in jaserver.players.values():
                                             player.reset_rtv()
 
                                         if (sum((player.rtm for player in
-                                                 players.values())) >= rtm_players):  # Make sure RTM is checked even
+                                                 jaserver.players.values())) >= rtm_players):  # Make sure RTM is checked even
                                             # if RTV failed to start.
                                             voting_modes = [gamemode for gamemode in iter(config.rtm) if
                                                             gamemode != current_mode]
@@ -1988,7 +1921,7 @@ def main(argv):
                                                 print(
                                                         "CONSOLE: (%s) [RTM] Rock the mode failed to start! No mode is currently available."
                                                         % (strftime(timenow(), "%d/%m/%Y %H:%M:%S")))
-                                                for player in players.values():
+                                                for player in jaserver.players.values():
                                                     player.force_rtm(False)
 
                                             else:  # Create voting options.
@@ -2080,7 +2013,8 @@ def main(argv):
                                 status.rtv = status.rtm = voting_instructions = start_voting = True
 
                             elif (sum(
-                                    (player.rtm for player in players.values())) >= rtm_players):  # Start a RTM voting.
+                                    (player.rtm for player in
+                                     jaserver.players.values())) >= rtm_players):  # Start a RTM voting.
 
                                 voting_modes = [gamemode for gamemode in iter(config.rtm) if gamemode != current_mode]
 
@@ -2091,7 +2025,7 @@ def main(argv):
                                     print(
                                             "CONSOLE: (%s) [RTM] Rock the mode failed to start! No mode is currently available."
                                             % (strftime(timenow(), "%d/%m/%Y %H:%M:%S")))
-                                    for player in players.values():
+                                    for player in jaserver.players.values():
                                         player.force_rtm(False)
 
                                 else:  # Create voting options.
@@ -2120,7 +2054,7 @@ def main(argv):
                                     voting_change_immediately = config.rtm_change_immediately
                                     status.rtv = status.rtm = voting_instructions = start_voting = True
 
-            if line is None:
+            if last_line is None:
 
                 if config.clean_log and getsize(config.logfile) >= config.clean_log[1]:  # Clean log file.
 
@@ -2133,10 +2067,10 @@ def main(argv):
                         compressed_log.add(config.logfile, arcname=basename(config.logfile))
                         compressed_log.close()
 
-                    truncate(0)
-                    flush()
-                    fsync(fileno)
-                    seek(0)
+                    log.truncate(0)
+                    log.flush()
+                    fsync(log.fileno())
+                    log.seek(0)
                     print("CONSOLE: (%s) Log file was cleaned." % (strftime(timenow(), "%d/%m/%Y %H:%M:%S")))
 
                 recover = False  # Reset recover flag when no line is read.
@@ -2178,7 +2112,7 @@ def main(argv):
                                          votes[1][3]))
                                 change_instructions = (votes[1][2], voting_wait_time, voting_s_wait_time)
 
-                            for player in players.values():
+                            for player in jaserver.players.values():
                                 player.reset_voting_options()
                             nomination_order[:] = []
                             voting_description = None
@@ -2243,7 +2177,7 @@ def main(argv):
 
                     else:
 
-                        total_players = len(players)
+                        total_players = len(jaserver.players)
                         total_votes = [vote_count for (vote_count, priority, vote_value, vote_display_value) in
                                        votes_values()]
                         most_voted = max(total_votes)
@@ -2318,7 +2252,7 @@ def main(argv):
                                 elif (voting_second_turn and most_voted <= (total_votes / 2) and
                                       (most_voted + second_most_voted) != total_votes):  # Prepare for second turn.
 
-                                    for player in players.values():
+                                    for player in jaserver.players.values():
                                         player.vote_option = None
                                     second_turn_options = [vote_id for (
                                         vote_id, (vote_count, priority, vote_value, vote_display_value))
@@ -2510,7 +2444,7 @@ def main(argv):
 
                                 status.rtv = status.rtm = start_voting = False
 
-                            for player in players.values():
+                            for player in jaserver.players.values():
                                 player.reset_voting_options()
                             nomination_order[:] = []
                             voting_description = None
@@ -2529,13 +2463,14 @@ def main(argv):
 
                                 if voting_countdown_seconds < 60:
 
-                                    message_manager.say_voting_message(voting_name, voting_countdown_seconds, "second",
-                                                                       total_votes, total_players, votes_items)
+                                    jaserver.message_manager.say_voting_message(voting_name, voting_countdown_seconds,
+                                                                                "second",
+                                                                                total_votes, total_players, votes_items)
 
                                 else:
 
-                                    message_manager.say_voting_message(voting_name, voting_countdown, "minute",
-                                                                       total_votes, total_players, votes_items)
+                                    jaserver.message_manager.say_voting_message(voting_name, voting_countdown, "minute",
+                                                                                total_votes, total_players, votes_items)
 
                                 voting_countdown -= 1
                                 voting_countdown_seconds = (voting_countdown * 60) if voting_countdown else 30
@@ -2552,10 +2487,3 @@ def main(argv):
 
                     sleep(Check_Status())  # Polling "wait" time.
                     # Prevents overloading CPU with I/O polling.
-
-
-if __name__ == "__main__":
-    try:
-        main(argv)
-    except KeyboardInterrupt:
-        exit(2)

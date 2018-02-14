@@ -20,7 +20,7 @@ RTVRTM_CFG_PATH="/root/.ja/base/$RTVRTM_CFG"
 if [ -f "$RTVRTM_CFG_PATH" ]; then
   cp /jedi-academy/*.txt /opt/rtvrtm
   mv "$RTVRTM_CFG_PATH" /opt/rtvrtm/rtvrtm.cfg
-  until (sleep 10; python /opt/rtvrtm/rtvrtm.py -c /opt/rtvrtm/rtvrtm.cfg); do
+  until (sleep 10; python /opt/rtvrtm/run-rtvrtm.py -c /opt/rtvrtm/rtvrtm.cfg); do
     echo "RTVRTM crashed with exit code $?. Restarting..." >&2
   done &
 fi

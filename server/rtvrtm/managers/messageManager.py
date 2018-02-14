@@ -4,14 +4,12 @@ import random
 import threading
 
 from fileConfigurable import JSONFileConfigurable
-from jaserver import JAServer
 
 
 class MessageManager(JSONFileConfigurable):
     """Handles automated messages to send to a JA server."""
 
     def __init__(self, jaserver):
-        assert isinstance(jaserver, JAServer)
         self.jaserver = jaserver
         # TODO: Read path from the config
         JSONFileConfigurable.__init__(self, "/jedi-academy/messages.json")

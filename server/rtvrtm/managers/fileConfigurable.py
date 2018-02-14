@@ -103,6 +103,7 @@ class JSONFileConfigurable(FileConfigurable):
     def synchronize(self):
         try:
             with open('data.json', 'w') as f:
+                # TODO: merge with existing data and deduplicate
                 json.dump(self.json_dict, f, sort_keys=True, indent=2)
         except Exception as e:
             print("WARNING: Failed to write to json at %s" % self.configuration_file_path)

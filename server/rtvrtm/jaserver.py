@@ -2,23 +2,33 @@ from __future__ import with_statement
 
 from socket import (socket, AF_INET, SOCK_DGRAM, SHUT_RDWR, timeout as socketTimeout, error as socketError)
 
+import managers.banManager
+import managers.lamingManager
+import managers.messageManager
+
 
 class JAServer(object):
     """Communication interface with a JA server."""
 
+    gamemodes = ["open", "semi authentic", "full authentic", "duel"]
+
     def __init__(self, address, bindaddr, rcon_pwd, use_say_only):
-        self.gamemodes = ("open", "semi authentic", "full authentic", "duel")
         self.cvars = None
+        self.players = {}
 
         self.address = address
         self.bindaddr = bindaddr
         self.rcon_pwd = rcon_pwd
         self.use_say_only = use_say_only
 
+        self.message_manager = managers.messageManager.MessageManager(self)
+        self.ban_manager = managers.banManager.BanManager(self)
+        self.laming_manager = managers.lamingManager.LamingManager(self)
+
     @property
     def gamemode(self):
         if self.cvars is not None:
-            return self.gamemodes[self.cvars["g_authenticity"]]
+            return JAServer.gamemodes[self.cvars["g_authenticity"]]
         else:
             return None
 
@@ -80,7 +90,7 @@ class JAServer(object):
 
     def test_connection(self):
         reply = self.status()
-        if startswith(reply, "\xff\xff\xff\xffprint\nbad rconpassword"):
+        if reply.startswith("\xff\xff\xff\xffprint\nbad rconpassword"):
             raise Exception("Incorrect rcon password.")
         elif reply != "\xff\xff\xff\xffprint":
             raise Exception("Unexpected error while contacting the server.")
