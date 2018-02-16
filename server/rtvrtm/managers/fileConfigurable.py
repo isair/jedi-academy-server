@@ -34,24 +34,30 @@ class FileConfigurable:
         raise NotImplementedError
 
 
-class ListFileConfigurable(FileConfigurable):
+class SetFileConfigurable(FileConfigurable):
 
     def __init__(self, configuration_file_path):
-        self.list = []
+        self.data = set()
         FileConfigurable.__init__(self, configuration_file_path)
 
     @staticmethod
     def parse_line(line):
         return line.strip().lower()
 
+    def __read_configuration__(self):
+        with open(self.configuration_file_path, "rt") as f:
+            list = [self.parse_line(line) for line in f]
+        return set(list)
+
     def load_configuration(self):
-        with open(self.configuration_file_path) as f:
-            self.list = [self.parse_line(line) for line in f]
+        self.data = self.__read_configuration__()
 
     def synchronize(self):
         try:
+            existing_set = self.__read_configuration__()
+            self.data = self.data.union(existing_set)
             with open(self.configuration_file_path, "wt") as f:
-                for item in self.list:
+                for item in self.data:
                     f.write("%s\n" % item)
         except Exception as e:
             print("WARNING: Failed to write to list at %s" % self.configuration_file_path)

@@ -3,6 +3,7 @@ from .kill import Kill
 
 class KillInfo:
     chain_kill_delay = 3
+    chain_kill_decay_delay = 300
 
     def __init__(self):
         self.lamer_suspicion_score = 0
@@ -24,27 +25,32 @@ class KillInfo:
 
     def update_double_kills(self, kill):
         """
-        Updates double kills and returns a suspicion score which is the same as the double kill count and +1 if the
-        latest pair is close to each other.
+        Updates double kills and returns a suspicion score which is the same as the double kill count. Double kills
+        decay in a certain amount of time.
         """
         assert isinstance(kill, Kill)
         bonus = 0
-        tracked_count = len(self.double_kill_tracker)
-        double_kill_count = len(self.double_kills)
-        if tracked_count == 0:
+        if len(self.double_kill_tracker) == 0:
             self.double_kill_tracker.append(kill)
         else:
-            if kill.time - self.double_kill_tracker[0].time <= KillInfo.chain_kill_delay:
-                if double_kill_count > 0 and self.double_kill_tracker[0].time - \
-                        self.double_kills[double_kill_count - 1][1].time <= KillInfo.chain_kill_delay:
-                    bonus = 1
+            time_since_last_kill = kill.time - self.double_kill_tracker[0].time
+            if time_since_last_kill <= KillInfo.chain_kill_delay and time_since_last_kill >= 0:
                 self.double_kill_tracker.append(kill)
                 self.double_kills.append(self.double_kill_tracker)
                 self.double_kill_tracker = []
-                double_kill_count += 1
+                # Decay mechanic.
+                new_double_kills = []
+                for double_kill in self.double_kills:
+                    time_difference = kill.time - double_kill[1].time
+                    if time_difference <= KillInfo.chain_kill_decay_delay and time_difference >= 0:
+                        new_double_kills.append(double_kill)
+                self.double_kills = new_double_kills
+            elif time_since_last_kill >= 0:
+                self.double_kill_tracker[0] = kill
             else:
                 self.double_kill_tracker[0] = kill
-        return double_kill_count + bonus
+                self.double_kills = []
+        return len(self.double_kills) + bonus
 
     def update_latest_kills(self, kill):
         """Updates last four kills and returns a suspicion score based on the time intervals of these kills."""
