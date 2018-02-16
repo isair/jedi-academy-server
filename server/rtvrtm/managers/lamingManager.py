@@ -40,13 +40,13 @@ class LamingManager:
         threading.Thread(target=self.__log_incident__, args=(player,)).start()
 
     def __log_incident__(self, player):
-        directoryName = "/jedi-academy/laming-manager-logs/"
-        directoryName += player.ip if player.name == "" else player.name
-        if not os.path.exists(directoryName):
-            os.makedirs(directoryName)
-        fileName = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
-        fileName += "-" + str(player.kill_info.lamer_suspicion_score) + ".txt"
-        destination = directoryName + "/" + fileName
+        directory_name = "/jedi-academy/laming-manager-logs/"
+        directory_name += player.ip if player.name == "" else player.name
+        if not os.path.exists(directory_name):
+            os.makedirs(directory_name)
+        file_name = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
+        file_name += "-" + str(player.kill_info.lamer_suspicion_score) + ".txt"
+        destination = directory_name + "/" + file_name
         # TODO: Read log path from config.
         with open("/root/.ja/MBII/log.txt", "rt") as f:
             log_lines = tail(f, lines=200)
