@@ -1,16 +1,36 @@
 from __future__ import with_statement
 
-from fileConfigurable import SetFileConfigurable
+from fileConfigurable import JSONFileConfigurable
 from ..models.player import Player
 
 
-class BanManager(SetFileConfigurable):
+class BanManager(JSONFileConfigurable):
     """Maintains an IP list and auto-kicks banned IPs."""
 
     def __init__(self, jaserver):
         self.jaserver = jaserver
+        self.banned_names = set()
+        self.banned_ips = set()
         # TODO: Read path from the config
-        SetFileConfigurable.__init__(self, "/jedi-academy/banIP.dat")
+        JSONFileConfigurable.__init__(self, "/jedi-academy/bans.json")
+
+    def load_configuration(self):
+        super(BanManager, self).load_configuration()
+        try:
+            self.banned_names = set(self.json_dict["names"])
+        except Exception as e:
+            print("WARNING: No names key defined under key in %s" % self.configuration_file_path)
+            print(e)
+        try:
+            self.banned_ips = set(self.json_dict["ips"])
+        except Exception as e:
+            print("WARNING: No ips key defined under key in %s" % self.configuration_file_path)
+            print(e)
+
+    def synchronize(self):
+        self.json_dict["names"] = list(self.banned_names)
+        self.json_dict["ips"] = list(self.banned_ips)
+        super(BanManager, self).synchronize()
 
     def kick(self, player, kick_reason, automatic=False):
         assert isinstance(player, Player)
@@ -29,25 +49,25 @@ class BanManager(SetFileConfigurable):
         self.jaserver.svsay(
             "^7%s ^1has been %sbanned%s." % (player.name, "automatically " if automatic else "", ban_reason))
         self.kick(player, " because they are in the ban list")
-        if player.ip not in self.data:
+        if player.ip not in self.banned_ips:
             print("[BanManager] Ban list updated.")
-            self.data.add(player.ip)
+            self.banned_ips.add(player.ip)
             self.synchronize()
 
     def unban_ip(self, ip):
         assert isinstance(ip, str)
-        if ip in self.data:
-            self.data.remove(ip)
+        if ip in self.banned_ips:
+            self.banned_ips.remove(ip)
             self.synchronize()
             print("[BanManager] Unban: %s" % ip)
-            self.jaserver.say("^2[BanManager] ^7$s has been removed from banned IPs." % ip)
+            self.jaserver.say("^2[BanManager] ^7%s has been removed from banned IPs." % ip)
         else:
             self.jaserver.say("^2[BanManager] ^7IP not in banned IPs.")
 
     def check_player(self, player):
         assert isinstance(player, Player)
         # If player is in the ban list, kick them.
-        if player.ip in self.data:
+        if player.ip in self.banned_ips or player.clean_name in self.banned_names:
             print("[BanManager] Banned player login attempt: %s" % player.ip)
             self.kick(player, " because they are in the ban list", automatic=True)
         # Check if their name is allowed. Kick them if it's not.

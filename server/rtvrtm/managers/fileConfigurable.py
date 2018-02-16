@@ -5,7 +5,7 @@ import threading
 import time
 
 
-class FileConfigurable:
+class FileConfigurable(object):
     """A base class for all classes that read configuration data from a file."""
 
     def __init__(self, configuration_file_path):
@@ -106,8 +106,7 @@ class JSONFileConfigurable(FileConfigurable):
 
     def synchronize(self):
         try:
-            with open('data.json', 'w') as f:
-                # TODO: merge with existing data and deduplicate
+            with open(self.configuration_file_path, 'w') as f:
                 json.dump(self.json_dict, f, sort_keys=True, indent=2)
         except Exception as e:
             print("WARNING: Failed to write to json at %s" % self.configuration_file_path)
