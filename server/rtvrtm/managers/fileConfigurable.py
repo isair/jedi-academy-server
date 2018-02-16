@@ -54,8 +54,6 @@ class SetFileConfigurable(FileConfigurable):
 
     def synchronize(self):
         try:
-            existing_set = self.__read_configuration__()
-            self.data = self.data.union(existing_set)
             with open(self.configuration_file_path, "wt") as f:
                 for item in self.data:
                     f.write("%s\n" % item)

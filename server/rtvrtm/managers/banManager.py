@@ -34,6 +34,16 @@ class BanManager(SetFileConfigurable):
             self.data.add(player.ip)
             self.synchronize()
 
+    def unban_ip(self, ip):
+        assert isinstance(ip, str)
+        if ip in self.data:
+            self.data.remove(ip)
+            self.synchronize()
+            print("[BanManager] Unban: %s" % ip)
+            self.jaserver.say("^2[BanManager] ^7$s has been removed from banned IPs." % ip)
+        else:
+            self.jaserver.say("^2[BanManager] ^7IP not in banned IPs.")
+
     def check_player(self, player):
         assert isinstance(player, Player)
         # If player is in the ban list, kick them.

@@ -495,6 +495,14 @@ def main(argv):
                                     recover = True
                                     print("Done!\n")
 
+                                elif startswith(admin_cmd, "!unban"):
+
+                                    try:
+                                        ip_to_remove = admin_cmd[7:].strip()
+                                        jaserver.ban_manager.unban_ip(ip_to_remove)
+                                    except Exception:
+                                        jaserver.say("^2[Admin] ^7Correct usage is: !unban ip")
+
                                 elif startswith(admin_cmd, "!ban"):
 
                                     player_to_ban = None
@@ -509,7 +517,7 @@ def main(argv):
                                         player_ip = None
                                         try:
                                             player_ip = admin_cmd[7:].strip()
-                                        except Exception as e:
+                                        except Exception:
                                             jaserver.say("^2[Admin] ^7Invalid player ip.")
                                         if player_ip is not None:
                                             for player in jaserver.players.values():
@@ -517,7 +525,6 @@ def main(argv):
                                                     player_to_ban = player
                                                     break
                                     else:
-                                        player_name = None
                                         try:
                                             player_name = strip(remove_color(admin_cmd[5:]))
                                         except Exception:
