@@ -4,6 +4,7 @@ import os
 import threading
 from datetime import datetime
 
+from ..managers.pushNotificationManager import PushNotificationManager
 from ..models.player import Player
 from ..utility import tail
 
@@ -24,17 +25,23 @@ class LamingManager:
         elif score == 1:
             if score != previous_score:
                 print("[LamingManager] Suspect: %d" % player.id)
-                self.jaserver.svsay("^1FBI^7: %s ^7is now a laming suspect." % player.name)
+                self.jaserver.svsay(
+                    "^2[Fairplay] ^7%s ^7is now a laming suspect. An admin has been notified." % player.name)
+                PushNotificationManager.send("%s (%s) has been warned." % (player.clean_name, player.ip))
+                self.log_incident(player)
             # TODO: Check reports.
-        elif score == 2:
+        elif score >= 2:
             print("[LamingManager] Possible lamer: %d" % player.id)
-            self.jaserver.svsay("^1FBI^7: %s ^7has been kicked for highly suspected laming." % player.name)
+            self.jaserver.svsay(
+                "^2[Fairplay] ^7%s ^7has been kicked for possible laming. An admin has been notified." % player.name)
             self.jaserver.ban_manager.kick(player, " for possible laming", True)
+            PushNotificationManager.send(
+                "%s (%s) has been kicked with score %d." % (player.clean_name, player.ip, score))
             self.log_incident(player)
-        elif score >= 3:
-            print("[LamingManager] Lamer: %d" % player.id)
-            self.jaserver.ban_manager.ban(player, " for laming", True)
-            self.log_incident(player)
+        # elif score >= 3:
+        #     print("[LamingManager] Lamer: %d" % player.id)
+        #     self.jaserver.ban_manager.ban(player, " for laming", True)
+        #     self.log_incident(player)
 
     def log_incident(self, player):
         threading.Thread(target=self.__log_incident__, args=(player,)).start()
@@ -49,6 +56,6 @@ class LamingManager:
         destination = directory_name + "/" + file_name
         # TODO: Read log path from config.
         with open("/root/.ja/MBII/log.txt", "rt") as f:
-            log_lines = tail(f, lines=200)
+            log_lines = tail(f, lines=300)
         with open(destination, "wt") as f:
             f.write(log_lines)
