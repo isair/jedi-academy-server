@@ -18,6 +18,7 @@ from jaserver import JAServer
 from models.player import Player
 from parsers.file.catchUpLogFileParser import CatchUpLogFileParser
 from parsers.line.killLogLineParser import KillLogLineParser
+from parsers.line.sayLogLineParser import SayLogLineParser
 from utility import SortableDict, DummyTime, fix_line, remove_color, calculate_time
 
 VERSION = "4.0"
@@ -133,6 +134,7 @@ def main(argv):
     jaserver = JAServer(config.address, config.bindaddr, config.rcon_pwd, config.use_say_only)
 
     kill_log_line_parser = KillLogLineParser(jaserver)
+    say_log_line_parser = SayLogLineParser(jaserver)
 
     nomination_order = []
     admin_choices = []
@@ -1085,641 +1087,645 @@ def main(argv):
                                     voting_change_immediately = config.limit_change_immediately
                                     status.rtv = status.rtm = voting_instructions = start_voting = True
 
-                            elif not recover:  # Standard parsers.
+                            elif SayLogLineParser.can_parse(line):
 
-                                snipped_line = split(snipped_line, ":", 2)
+                                say_log_line_parser.parse(line)
 
-                                if len(snipped_line) == 3 and isdigit(snipped_line[0]) and snipped_line[1] in (
-                                        " say", " sayteam"):
+                                if not recover:  # Standard parsers.
 
-                                    player_id = int(snipped_line[0])
-                                    player_name, original_msg = split(snipped_line[2], '"', 1)
-                                    player_name = player_name[1:-2]
-                                    original_msg = strip(remove_color(original_msg[:-1]))
-                                    msg = lower(original_msg)
-                                    current_time = time()
+                                    snipped_line = split(snipped_line, ":", 2)
 
-                                    if jaserver.players[player_id].timer <= current_time:  # Flood protection.
+                                    if len(snipped_line) == 3 and isdigit(snipped_line[0]) and snipped_line[1] in (
+                                            " say", " sayteam"):
 
-                                        if msg in ("rtv", "!rtv"):
+                                        player_id = int(snipped_line[0])
+                                        player_name, original_msg = split(snipped_line[2], '"', 1)
+                                        player_name = player_name[1:-2]
+                                        original_msg = strip(remove_color(original_msg[:-1]))
+                                        msg = lower(original_msg)
+                                        current_time = time()
 
-                                            if not config.rtv:
+                                        if jaserver.players[player_id].timer <= current_time:  # Flood protection.
 
-                                                jaserver.say("^2[RTV] ^7Rock the vote is unavailable.")
+                                            if msg in ("rtv", "!rtv"):
 
-                                            elif not status.rtv:
+                                                if not config.rtv:
 
-                                                if isinstance(status.times[0], float):
+                                                    jaserver.say("^2[RTV] ^7Rock the vote is unavailable.")
 
-                                                    jaserver.say(
-                                                        "^2[RTV] ^7Rock the vote is currently disabled. Time remaining: %s"
-                                                        % (calculate_time(current_time, status.times[0])))
+                                                elif not status.rtv:
 
-                                                else:
-
-                                                    jaserver.say(
-                                                        "^2[RTV] ^7Rock the vote is temporarily disabled.")
-
-                                            else:
-
-                                                available_maps = config.maps
-
-                                                if config.pick_secondary_maps:
-                                                    available_maps += config.secondary_maps
-
-                                                available_maps = (lower(mapname) for mapname in iter(available_maps))
-                                                available_maps = sum((True for mapname in available_maps
-                                                                      if (mapname != current_map and
-                                                                          recently_played[mapname] <= current_time)))
-                                                available_maps += len(nomination_order)
-
-                                                if not available_maps:
-
-                                                    jaserver.say(
-                                                        "^2[RTV] ^7Rock the vote is disabled because no map is currently available.")
-                                                    for player in jaserver.players.values():
-                                                        player.force_rtv(False)
-                                                        player.nomination = None
-
-                                                elif jaserver.players[player_id].rtv:
-
-                                                    jaserver.say(
-                                                        "^2[RTV] ^7%s ^7already wanted to rock the vote (%i/%i)."
-                                                        % (player_name,
-                                                           sum((player.rtv for player in jaserver.players.values())),
-                                                           rtv_players))
-
-                                                else:
-
-                                                    jaserver.players[player_id].rtv = check_votes = True
-                                                    jaserver.svsay("^2[RTV] ^7%s ^7wants to rock the vote (%i/%i)."
-                                                                   % (player_name,
-                                                                      sum((player.rtv for player in
-                                                                           jaserver.players.values())),
-                                                                      rtv_players))
-
-                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
-
-                                        elif msg in ("unrtv", "!unrtv"):
-
-                                            if not config.rtv:
-
-                                                jaserver.say("^2[RTV] ^7Rock the vote is unavailable.")
-
-                                            elif not status.rtv:
-
-                                                if isinstance(status.times[0], float):
-
-                                                    jaserver.say(
-                                                        "^2[RTV] ^7Rock the vote is currently disabled. Time remaining: %s"
-                                                        % (calculate_time(current_time, status.times[0])))
-
-                                                else:
-
-                                                    jaserver.say(
-                                                        "^2[RTV] ^7Rock the vote is temporarily disabled.")
-
-                                            else:
-
-                                                available_maps = config.maps
-
-                                                if config.pick_secondary_maps:
-                                                    available_maps += config.secondary_maps
-
-                                                available_maps = (lower(mapname) for mapname in iter(available_maps))
-                                                available_maps = sum((True for mapname in available_maps
-                                                                      if (mapname != current_map and
-                                                                          recently_played[mapname] <= current_time)))
-                                                available_maps += len(nomination_order)
-
-                                                if not available_maps:
-
-                                                    jaserver.say(
-                                                        "^2[RTV] ^7Rock the vote is disabled because no map is currently available.")
-                                                    for player in jaserver.players.values():
-                                                        player.reset_rtv()
-
-                                                elif not jaserver.players[player_id].rtv:
-
-                                                    jaserver.say(
-                                                        "^2[RTV] ^7%s ^7didn't want to rock the vote yet (%i/%i)."
-                                                        % (player_name,
-                                                           sum((player.rtv for player in jaserver.players.values())),
-                                                           rtv_players))
-
-                                                else:
-
-                                                    jaserver.players[player_id].force_rtv(False)
-                                                    jaserver.svsay(
-                                                        "^2[RTV] ^7%s ^7no longer wants to rock the vote (%i/%i)."
-                                                        % (player_name,
-                                                           sum((player.rtv for player in jaserver.players.values())),
-                                                           rtv_players))
-
-                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
-
-                                        elif msg in ("rtm", "!rtm"):
-
-                                            if not config.rtm:
-
-                                                jaserver.say("^2[RTM] ^7Rock the mode is unavailable.")
-
-                                            elif not status.rtm:
-
-                                                if isinstance(status.times[1], float):
-
-                                                    jaserver.say(
-                                                        "^2[RTM] ^7Rock the mode is currently disabled. Time remaining: %s"
-                                                        % (calculate_time(current_time, status.times[1])))
-
-                                                else:
-
-                                                    jaserver.say(
-                                                        "^2[RTM] ^7Rock the mode is temporarily disabled.")
-
-                                            elif not [gamemode for gamemode in iter(config.rtm) if
-                                                      gamemode != current_mode]:
-
-                                                jaserver.say(
-                                                    "^2[RTV] ^7Rock the mode is disabled because no mode is currently available.")
-                                                for player in jaserver.players.values():
-                                                    player.force_rtm(False)
-
-                                            elif jaserver.players[player_id].rtm:
-
-                                                jaserver.say(
-                                                    "^2[RTM] ^7%s ^7already wanted to rock the mode (%i/%i)."
-                                                    % (player_name,
-                                                       sum((player.rtm for player in jaserver.players.values())),
-                                                       rtm_players))
-
-                                            else:
-
-                                                jaserver.players[player_id].rtm = check_votes = True
-                                                jaserver.svsay("^2[RTM] ^7%s ^7wants to rock the mode (%i/%i)."
-                                                               % (player_name,
-                                                                  sum((player.rtm for player in
-                                                                       jaserver.players.values())),
-                                                                  rtm_players))
-
-                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
-
-                                        elif msg in ("unrtm", "!unrtm"):
-
-                                            if not config.rtm:
-
-                                                jaserver.say("^2[RTM] ^7Rock the mode is unavailable.")
-
-                                            elif not status.rtm:
-
-                                                if isinstance(status.times[1], float):
-
-                                                    jaserver.say(
-                                                        "^2[RTM] ^7Rock the mode is currently disabled. Time remaining: %s"
-                                                        % (calculate_time(current_time, status.times[1])))
-
-                                                else:
-
-                                                    jaserver.say(
-                                                        "^2[RTM] ^7Rock the mode is temporarily disabled.")
-
-                                            elif not [gamemode for gamemode in iter(config.rtm) if
-                                                      gamemode != current_mode]:
-
-                                                jaserver.say(
-                                                    "^2[RTV] ^7Rock the mode is disabled because no mode is currently available.")
-                                                for player in jaserver.players.values():
-                                                    player.force_rtm(False)
-
-                                            elif not jaserver.players[player_id].rtm:
-
-                                                jaserver.say(
-                                                    "^2[RTM] ^7%s ^7didn't want to rock the mode yet (%i/%i)."
-                                                    % (player_name,
-                                                       sum((player.rtm for player in jaserver.players.values())),
-                                                       rtm_players))
-
-                                            else:
-
-                                                jaserver.players[player_id].rtm = False
-                                                jaserver.svsay(
-                                                    "^2[RTM] ^7%s ^7no longer wants to rock the mode (%i/%i)."
-                                                    % (player_name,
-                                                       sum((player.rtm for player in jaserver.players.values())),
-                                                       rtm_players))
-
-                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
-
-                                        elif msg in ("nominate", "!nominate"):
-
-                                            if not config.maps:
-
-                                                jaserver.say("^2[Voting] ^7Map voting is unavailable.")
-
-                                            elif config.nomination_type is None:
-
-                                                jaserver.say(
-                                                    "^2[Nominate] ^7Map nomination is unavailable because the number of maps is less than or equal 5.")
-
-                                            else:
-
-                                                jaserver.say("^2[Nominate] ^7Usage: %s mapname" % (original_msg))
-
-                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
-
-                                        elif startswith(msg, "nominate ") or startswith(msg, "!nominate "):
-
-                                            if not config.maps:
-
-                                                jaserver.say("^2[Voting] ^7Map voting is unavailable.")
-
-                                            elif config.nomination_type is None:
-
-                                                jaserver.say(
-                                                    "^2[Nominate] ^7Map nomination is unavailable because the number of maps is less than or equal 5.")
-
-                                            else:
-
-                                                nominated_map = lstrip(msg[9:])
-                                                compare_map = [mapname for mapname in
-                                                               iter(config.maps + config.secondary_maps)
-                                                               if lower(
-                                                        mapname) == nominated_map]  # Compare nominated mapname against both map lists.
-                                                nominated_maps = [player.nomination for player in
-                                                                  jaserver.players.values() if
-                                                                  player.nomination]
-
-                                                if config.nomination_type:
-
-                                                    if not compare_map:
+                                                    if isinstance(status.times[0], float):
 
                                                         jaserver.say(
-                                                            "^2[Nominate] ^7Invalid map. Please use <!>maplist or <!>search expression.")
-
-                                                    elif nominated_map == current_map:
-
-                                                        jaserver.say(
-                                                            "^2[Nominate] ^7%s cannot be nominated (current map)."
-                                                            % (compare_map[0]))
-
-                                                    elif recently_played[nominated_map] > current_time:
-
-                                                        jaserver.say(
-                                                            "^2[Nominate] ^7%s cannot be nominated (recently played) (%s left)."
-                                                            % (compare_map[0], calculate_time(current_time,
-                                                                                              recently_played[
-                                                                                                  nominated_map])))
+                                                            "^2[RTV] ^7Rock the vote is currently disabled. Time remaining: %s"
+                                                            % (calculate_time(current_time, status.times[0])))
 
                                                     else:
 
-                                                        nominations = count(nominated_maps, compare_map[0])
+                                                        jaserver.say(
+                                                            "^2[RTV] ^7Rock the vote is temporarily disabled.")
 
-                                                        if jaserver.players[player_id].nomination == compare_map[0]:
+                                                else:
+
+                                                    available_maps = config.maps
+
+                                                    if config.pick_secondary_maps:
+                                                        available_maps += config.secondary_maps
+
+                                                    available_maps = (lower(mapname) for mapname in iter(available_maps))
+                                                    available_maps = sum((True for mapname in available_maps
+                                                                          if (mapname != current_map and
+                                                                              recently_played[mapname] <= current_time)))
+                                                    available_maps += len(nomination_order)
+
+                                                    if not available_maps:
+
+                                                        jaserver.say(
+                                                            "^2[RTV] ^7Rock the vote is disabled because no map is currently available.")
+                                                        for player in jaserver.players.values():
+                                                            player.force_rtv(False)
+                                                            player.nomination = None
+
+                                                    elif jaserver.players[player_id].rtv:
+
+                                                        jaserver.say(
+                                                            "^2[RTV] ^7%s ^7already wanted to rock the vote (%i/%i)."
+                                                            % (player_name,
+                                                               sum((player.rtv for player in jaserver.players.values())),
+                                                               rtv_players))
+
+                                                    else:
+
+                                                        jaserver.players[player_id].rtv = check_votes = True
+                                                        jaserver.svsay("^2[RTV] ^7%s ^7wants to rock the vote (%i/%i)."
+                                                                       % (player_name,
+                                                                          sum((player.rtv for player in
+                                                                               jaserver.players.values())),
+                                                                          rtv_players))
+
+                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
+
+                                            elif msg in ("unrtv", "!unrtv"):
+
+                                                if not config.rtv:
+
+                                                    jaserver.say("^2[RTV] ^7Rock the vote is unavailable.")
+
+                                                elif not status.rtv:
+
+                                                    if isinstance(status.times[0], float):
+
+                                                        jaserver.say(
+                                                            "^2[RTV] ^7Rock the vote is currently disabled. Time remaining: %s"
+                                                            % (calculate_time(current_time, status.times[0])))
+
+                                                    else:
+
+                                                        jaserver.say(
+                                                            "^2[RTV] ^7Rock the vote is temporarily disabled.")
+
+                                                else:
+
+                                                    available_maps = config.maps
+
+                                                    if config.pick_secondary_maps:
+                                                        available_maps += config.secondary_maps
+
+                                                    available_maps = (lower(mapname) for mapname in iter(available_maps))
+                                                    available_maps = sum((True for mapname in available_maps
+                                                                          if (mapname != current_map and
+                                                                              recently_played[mapname] <= current_time)))
+                                                    available_maps += len(nomination_order)
+
+                                                    if not available_maps:
+
+                                                        jaserver.say(
+                                                            "^2[RTV] ^7Rock the vote is disabled because no map is currently available.")
+                                                        for player in jaserver.players.values():
+                                                            player.reset_rtv()
+
+                                                    elif not jaserver.players[player_id].rtv:
+
+                                                        jaserver.say(
+                                                            "^2[RTV] ^7%s ^7didn't want to rock the vote yet (%i/%i)."
+                                                            % (player_name,
+                                                               sum((player.rtv for player in jaserver.players.values())),
+                                                               rtv_players))
+
+                                                    else:
+
+                                                        jaserver.players[player_id].force_rtv(False)
+                                                        jaserver.svsay(
+                                                            "^2[RTV] ^7%s ^7no longer wants to rock the vote (%i/%i)."
+                                                            % (player_name,
+                                                               sum((player.rtv for player in jaserver.players.values())),
+                                                               rtv_players))
+
+                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
+
+                                            elif msg in ("rtm", "!rtm"):
+
+                                                if not config.rtm:
+
+                                                    jaserver.say("^2[RTM] ^7Rock the mode is unavailable.")
+
+                                                elif not status.rtm:
+
+                                                    if isinstance(status.times[1], float):
+
+                                                        jaserver.say(
+                                                            "^2[RTM] ^7Rock the mode is currently disabled. Time remaining: %s"
+                                                            % (calculate_time(current_time, status.times[1])))
+
+                                                    else:
+
+                                                        jaserver.say(
+                                                            "^2[RTM] ^7Rock the mode is temporarily disabled.")
+
+                                                elif not [gamemode for gamemode in iter(config.rtm) if
+                                                          gamemode != current_mode]:
+
+                                                    jaserver.say(
+                                                        "^2[RTV] ^7Rock the mode is disabled because no mode is currently available.")
+                                                    for player in jaserver.players.values():
+                                                        player.force_rtm(False)
+
+                                                elif jaserver.players[player_id].rtm:
+
+                                                    jaserver.say(
+                                                        "^2[RTM] ^7%s ^7already wanted to rock the mode (%i/%i)."
+                                                        % (player_name,
+                                                           sum((player.rtm for player in jaserver.players.values())),
+                                                           rtm_players))
+
+                                                else:
+
+                                                    jaserver.players[player_id].rtm = check_votes = True
+                                                    jaserver.svsay("^2[RTM] ^7%s ^7wants to rock the mode (%i/%i)."
+                                                                   % (player_name,
+                                                                      sum((player.rtm for player in
+                                                                           jaserver.players.values())),
+                                                                      rtm_players))
+
+                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
+
+                                            elif msg in ("unrtm", "!unrtm"):
+
+                                                if not config.rtm:
+
+                                                    jaserver.say("^2[RTM] ^7Rock the mode is unavailable.")
+
+                                                elif not status.rtm:
+
+                                                    if isinstance(status.times[1], float):
+
+                                                        jaserver.say(
+                                                            "^2[RTM] ^7Rock the mode is currently disabled. Time remaining: %s"
+                                                            % (calculate_time(current_time, status.times[1])))
+
+                                                    else:
+
+                                                        jaserver.say(
+                                                            "^2[RTM] ^7Rock the mode is temporarily disabled.")
+
+                                                elif not [gamemode for gamemode in iter(config.rtm) if
+                                                          gamemode != current_mode]:
+
+                                                    jaserver.say(
+                                                        "^2[RTV] ^7Rock the mode is disabled because no mode is currently available.")
+                                                    for player in jaserver.players.values():
+                                                        player.force_rtm(False)
+
+                                                elif not jaserver.players[player_id].rtm:
+
+                                                    jaserver.say(
+                                                        "^2[RTM] ^7%s ^7didn't want to rock the mode yet (%i/%i)."
+                                                        % (player_name,
+                                                           sum((player.rtm for player in jaserver.players.values())),
+                                                           rtm_players))
+
+                                                else:
+
+                                                    jaserver.players[player_id].rtm = False
+                                                    jaserver.svsay(
+                                                        "^2[RTM] ^7%s ^7no longer wants to rock the mode (%i/%i)."
+                                                        % (player_name,
+                                                           sum((player.rtm for player in jaserver.players.values())),
+                                                           rtm_players))
+
+                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
+
+                                            elif msg in ("nominate", "!nominate"):
+
+                                                if not config.maps:
+
+                                                    jaserver.say("^2[Voting] ^7Map voting is unavailable.")
+
+                                                elif config.nomination_type is None:
+
+                                                    jaserver.say(
+                                                        "^2[Nominate] ^7Map nomination is unavailable because the number of maps is less than or equal 5.")
+
+                                                else:
+
+                                                    jaserver.say("^2[Nominate] ^7Usage: %s mapname" % (original_msg))
+
+                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
+
+                                            elif startswith(msg, "nominate ") or startswith(msg, "!nominate "):
+
+                                                if not config.maps:
+
+                                                    jaserver.say("^2[Voting] ^7Map voting is unavailable.")
+
+                                                elif config.nomination_type is None:
+
+                                                    jaserver.say(
+                                                        "^2[Nominate] ^7Map nomination is unavailable because the number of maps is less than or equal 5.")
+
+                                                else:
+
+                                                    nominated_map = lstrip(msg[9:])
+                                                    compare_map = [mapname for mapname in
+                                                                   iter(config.maps + config.secondary_maps)
+                                                                   if lower(
+                                                            mapname) == nominated_map]  # Compare nominated mapname against both map lists.
+                                                    nominated_maps = [player.nomination for player in
+                                                                      jaserver.players.values() if
+                                                                      player.nomination]
+
+                                                    if config.nomination_type:
+
+                                                        if not compare_map:
 
                                                             jaserver.say(
-                                                                "^2[Nominate] ^7%s ^7already nominated %s (%i nomination%s)."
-                                                                % (player_name, compare_map[0], nominations,
-                                                                   ("" if nominations == 1 else "s")))
+                                                                "^2[Nominate] ^7Invalid map. Please use <!>maplist or <!>search expression.")
+
+                                                        elif nominated_map == current_map:
+
+                                                            jaserver.say(
+                                                                "^2[Nominate] ^7%s cannot be nominated (current map)."
+                                                                % (compare_map[0]))
+
+                                                        elif recently_played[nominated_map] > current_time:
+
+                                                            jaserver.say(
+                                                                "^2[Nominate] ^7%s cannot be nominated (recently played) (%s left)."
+                                                                % (compare_map[0], calculate_time(current_time,
+                                                                                                  recently_played[
+                                                                                                      nominated_map])))
 
                                                         else:
 
-                                                            nominations += 1
+                                                            nominations = count(nominated_maps, compare_map[0])
 
-                                                            if jaserver.players[player_id].nomination:
+                                                            if jaserver.players[player_id].nomination == compare_map[0]:
 
-                                                                nomination_order.remove(player_id)
-                                                                jaserver.svsay(
-                                                                    "^2[Nominate] ^7%s ^7nomination changed to %s (%i nomination%s)."
+                                                                jaserver.say(
+                                                                    "^2[Nominate] ^7%s ^7already nominated %s (%i nomination%s)."
                                                                     % (player_name, compare_map[0], nominations,
                                                                        ("" if nominations == 1 else "s")))
 
                                                             else:
 
+                                                                nominations += 1
+
+                                                                if jaserver.players[player_id].nomination:
+
+                                                                    nomination_order.remove(player_id)
+                                                                    jaserver.svsay(
+                                                                        "^2[Nominate] ^7%s ^7nomination changed to %s (%i nomination%s)."
+                                                                        % (player_name, compare_map[0], nominations,
+                                                                           ("" if nominations == 1 else "s")))
+
+                                                                else:
+
+                                                                    jaserver.svsay(
+                                                                        "^2[Nominate] ^7%s ^7nominated %s (%i nomination%s)!"
+                                                                        % (player_name, compare_map[0], nominations,
+                                                                           ("" if nominations == 1 else "s")))
+
+                                                                jaserver.players[player_id].nomination = compare_map[0]
+                                                                nomination_order.append(player_id)
+
+                                                    elif len(nominated_maps) < 5 or jaserver.players[player_id].nomination:
+
+                                                        if not compare_map:
+
+                                                            jaserver.say(
+                                                                "^2[Nominate] ^7Invalid map. Please use <!>maplist or <!>search expression.")
+
+                                                        elif nominated_map == current_map:
+
+                                                            jaserver.say(
+                                                                "^2[Nominate] ^7%s cannot be nominated (current map)."
+                                                                % (compare_map[0]))
+
+                                                        elif recently_played[nominated_map] > current_time:
+
+                                                            jaserver.say(
+                                                                "^2[Nominate] ^7%s cannot be nominated (recently played) (%s left)."
+                                                                % (compare_map[0], calculate_time(current_time,
+                                                                                                  recently_played[
+                                                                                                      nominated_map])))
+
+                                                        elif compare_map[0] in nominated_maps:
+
+                                                            jaserver.say(
+                                                                "^2[Nominate] ^7%s cannot be nominated (already nominated)."
+                                                                % (compare_map[0]))
+
+                                                        else:
+
+                                                            if jaserver.players[player_id].nomination:
+
+                                                                nomination_order.remove(player_id)
                                                                 jaserver.svsay(
-                                                                    "^2[Nominate] ^7%s ^7nominated %s (%i nomination%s)!"
-                                                                    % (player_name, compare_map[0], nominations,
-                                                                       ("" if nominations == 1 else "s")))
+                                                                    "^2[Nominate] ^7%s ^7nomination changed to %s."
+                                                                    % (player_name, compare_map[0]))
+
+                                                            else:
+
+                                                                jaserver.svsay("^2[Nominate] ^7%s ^7nominated %s!"
+                                                                               % (player_name, compare_map[0]))
 
                                                             jaserver.players[player_id].nomination = compare_map[0]
                                                             nomination_order.append(player_id)
 
-                                                elif len(nominated_maps) < 5 or jaserver.players[player_id].nomination:
-
-                                                    if not compare_map:
+                                                    else:
 
                                                         jaserver.say(
-                                                            "^2[Nominate] ^7Invalid map. Please use <!>maplist or <!>search expression.")
+                                                            "^2[Nominate] ^7Maximum number of nominations (5) reached.")
 
-                                                    elif nominated_map == current_map:
+                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
 
-                                                        jaserver.say(
-                                                            "^2[Nominate] ^7%s cannot be nominated (current map)."
-                                                            % (compare_map[0]))
+                                            elif msg in ("revoke", "!revoke"):
 
-                                                    elif recently_played[nominated_map] > current_time:
+                                                if not config.maps:
 
-                                                        jaserver.say(
-                                                            "^2[Nominate] ^7%s cannot be nominated (recently played) (%s left)."
-                                                            % (compare_map[0], calculate_time(current_time,
-                                                                                              recently_played[
-                                                                                                  nominated_map])))
+                                                    jaserver.say("^2[Voting] ^7Map voting is unavailable.")
 
-                                                    elif compare_map[0] in nominated_maps:
+                                                elif config.nomination_type is None:
 
-                                                        jaserver.say(
-                                                            "^2[Nominate] ^7%s cannot be nominated (already nominated)."
-                                                            % (compare_map[0]))
+                                                    jaserver.say(
+                                                        "^2[Nominate] ^7Map nomination is unavailable because the number of maps is less than or equal 5.")
+
+                                                elif not jaserver.players[player_id].nomination:
+
+                                                    jaserver.say("^2[Revoke] ^7%s ^7has no nominated map." %
+                                                                 (player_name))
+
+                                                else:
+
+                                                    if config.nomination_type:
+
+                                                        nominations = (count(
+                                                            [player.nomination for player in jaserver.players.values()],
+                                                            jaserver.players[player_id].nomination) - 1)
+                                                        jaserver.svsay(
+                                                            "^2[Revoke] ^7%s ^7nomination to %s was revoked (%i nomination%s)." %
+                                                            (player_name, jaserver.players[player_id].nomination,
+                                                             nominations,
+                                                             ("" if nominations == 1 else "s")))
 
                                                     else:
 
-                                                        if jaserver.players[player_id].nomination:
+                                                        jaserver.svsay("^2[Revoke] ^7%s ^7nomination revoked!" %
+                                                                       (player_name))
 
-                                                            nomination_order.remove(player_id)
-                                                            jaserver.svsay(
-                                                                "^2[Nominate] ^7%s ^7nomination changed to %s."
-                                                                % (player_name, compare_map[0]))
+                                                    jaserver.players[player_id].nomination = None
+                                                    nomination_order.remove(player_id)
+
+                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
+
+                                            elif msg in ("maplist", "!maplist"):
+
+                                                if not config.maps:
+
+                                                    jaserver.say("^2[Voting] ^7Map voting is unavailable.")
+
+                                                elif config.nomination_type is None:
+
+                                                    jaserver.say(
+                                                        "^2[Nominate] ^7Map nomination is unavailable because the number of maps is less than or equal 5.")
+
+                                                else:
+
+                                                    sorted_maps = iter(sorted(
+                                                        (mapname for mapname in iter(config.maps + config.secondary_maps)
+                                                         if (lower(mapname) != current_map and
+                                                             recently_played[lower(mapname)] <= current_time)),
+                                                        key=lower))  # Create an alphanumeric sorted map list.
+
+                                                    if not config.nomination_type:  # Remove nominated maps.
+
+                                                        nominated_maps = [player.nomination for player in
+                                                                          jaserver.players.values()
+                                                                          if player.nomination]
+                                                        sorted_maps = (mapname for mapname in sorted_maps if
+                                                                       mapname not in nominated_maps)
+
+                                                    # Create split lists for display in the server based on a maximum of MAPLIST_MAX_SIZE bytes per
+                                                    # list string.
+
+                                                    maplist = {1: []}
+                                                    append_map = maplist[1].append
+                                                    maplist_number = 1
+                                                    maplist_length = 16
+
+                                                    for mapname in sorted_maps:
+
+                                                        maplist_length += len(mapname)
+
+                                                        if maplist_length > MAPLIST_MAX_SIZE:
+                                                            maplist_number += 1
+                                                            maplist[maplist_number] = []
+                                                            append_map = maplist[maplist_number].append
+                                                            maplist_length = (15 + len(str(maplist_number)) + len(mapname))
+
+                                                        maplist_length += 2
+                                                        append_map(mapname)
+
+                                                    if not maplist[1]:
+
+                                                        jaserver.say(
+                                                            "^2[Maplist] ^7No map is currently available for nomination.")
+
+                                                    elif len(maplist) > 1:
+
+                                                        jaserver.say(
+                                                            "^2[Maplist] ^7Usage: %s number (Available map lists: %i)" %
+                                                            (original_msg, len(maplist)))
+
+                                                    else:
+
+                                                        jaserver.say("^2[Maplist] ^7%s" % (join(", ", maplist[1])))
+
+                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
+
+                                            elif startswith(msg, "maplist ") or startswith(msg, "!maplist "):
+
+                                                if not config.maps:
+
+                                                    jaserver.say("^2[Voting] ^7Map voting is unavailable.")
+
+                                                elif config.nomination_type is None:
+
+                                                    jaserver.say(
+                                                        "^2[Nominate] ^7Map nomination is unavailable because the number of maps is less than or equal 5.")
+
+                                                else:
+
+                                                    sorted_maps = iter(sorted(
+                                                        (mapname for mapname in iter(config.maps + config.secondary_maps)
+                                                         if (lower(mapname) != current_map and
+                                                             recently_played[lower(mapname)] <= current_time)),
+                                                        key=lower))  # Create an alphanumeric sorted map list.
+
+                                                    if not config.nomination_type:  # Remove nominated maps.
+
+                                                        nominated_maps = [player.nomination for player in
+                                                                          jaserver.players.values()
+                                                                          if player.nomination]
+                                                        sorted_maps = (mapname for mapname in sorted_maps if
+                                                                       mapname not in nominated_maps)
+
+                                                    # Create split lists for display in the server based on a maximum of MAPLIST_MAX_SIZE bytes per
+                                                    # list string.
+
+                                                    maplist = {1: []}
+                                                    append_map = maplist[1].append
+                                                    maplist_number = 1
+                                                    maplist_length = 16
+
+                                                    for mapname in sorted_maps:
+
+                                                        maplist_length += len(mapname)
+
+                                                        if maplist_length > MAPLIST_MAX_SIZE:
+                                                            maplist_number += 1
+                                                            maplist[maplist_number] = []
+                                                            append_map = maplist[maplist_number].append
+                                                            maplist_length = (15 + len(str(maplist_number)) + len(mapname))
+
+                                                        maplist_length += 2
+                                                        append_map(mapname)
+
+                                                    if not maplist[1]:
+
+                                                        jaserver.say(
+                                                            "^2[Maplist] ^7No map is currently available for nomination.")
+
+                                                    else:
+
+                                                        try:
+
+                                                            maplist_number = int(msg[8:])
+                                                            jaserver.say("^2[Maplist %i] ^7%s" % (
+                                                                maplist_number, join(", ", maplist[maplist_number])))
+
+                                                        except (ValueError, KeyError):
+
+                                                            jaserver.say(
+                                                                "^2[Maplist] ^7Invalid map list number (Available map lists: %i)."
+                                                                % (len(maplist)))
+
+                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
+
+                                            elif msg in ("search", "!search"):
+
+                                                if not config.maps:
+
+                                                    jaserver.say("^2[Voting] ^7Map voting is unavailable.")
+
+                                                elif config.nomination_type is None:
+
+                                                    jaserver.say(
+                                                        "^2[Nominate] ^7Map nomination is unavailable because the number of maps is less than or equal 5.")
+
+                                                else:
+
+                                                    jaserver.say("^2[Search] ^7Usage: %s expression" % (original_msg))
+
+                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
+
+                                            elif startswith(msg, "search ") or startswith(msg, "!search "):
+
+                                                if not config.maps:
+
+                                                    jaserver.say("^2[Voting] ^7Map voting is unavailable.")
+
+                                                elif config.nomination_type is None:
+
+                                                    jaserver.say(
+                                                        "^2[Nominate] ^7Map nomination is unavailable because the number of maps is less than or equal 5.")
+
+                                                else:
+
+                                                    search_expression = lstrip(msg[7:])
+
+                                                    if search_expression != "*":  # No wildcard.
+                                                        # Search for given expression.
+                                                        maplist = [mapname for mapname in
+                                                                   iter(config.maps + config.secondary_maps)
+                                                                   if search_expression in lower(mapname)]
+
+                                                    else:
+
+                                                        maplist = list(config.maps + config.secondary_maps)
+
+                                                    if not maplist:
+
+                                                        jaserver.say(
+                                                            "^2[Search] ^7No matches found for expression ''%s''."
+                                                            % (lstrip(original_msg[7:])))
+
+                                                    else:
+
+                                                        sort(maplist, key=lower)
+                                                        maplist = join(", ", maplist)
+
+                                                        if (len(maplist) + 13) > MAPLIST_MAX_SIZE:
+
+                                                            jaserver.say(
+                                                                "^2[Search] ^7Result for expression ''%s'' is too long (greater than %i characters)." %
+                                                                (lstrip(original_msg[7:]), MAPLIST_MAX_SIZE))
 
                                                         else:
 
-                                                            jaserver.svsay("^2[Nominate] ^7%s ^7nominated %s!"
-                                                                           % (player_name, compare_map[0]))
+                                                            jaserver.say("^2[Search] ^7%s" % (maplist))
 
-                                                        jaserver.players[player_id].nomination = compare_map[0]
-                                                        nomination_order.append(player_id)
+                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
 
-                                                else:
+                                            elif msg in ("elapsed", "!elapsed"):
 
-                                                    jaserver.say(
-                                                        "^2[Nominate] ^7Maximum number of nominations (5) reached.")
+                                                jaserver.say("^2[Elapsed] ^7Usage: %s map/mode" % (original_msg))
+                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
 
-                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
+                                            elif startswith(msg, "elapsed ") or startswith(msg, "!elapsed "):
 
-                                        elif msg in ("revoke", "!revoke"):
+                                                elapse = lstrip(msg[8:])
 
-                                            if not config.maps:
-
-                                                jaserver.say("^2[Voting] ^7Map voting is unavailable.")
-
-                                            elif config.nomination_type is None:
-
-                                                jaserver.say(
-                                                    "^2[Nominate] ^7Map nomination is unavailable because the number of maps is less than or equal 5.")
-
-                                            elif not jaserver.players[player_id].nomination:
-
-                                                jaserver.say("^2[Revoke] ^7%s ^7has no nominated map." %
-                                                             (player_name))
-
-                                            else:
-
-                                                if config.nomination_type:
-
-                                                    nominations = (count(
-                                                        [player.nomination for player in jaserver.players.values()],
-                                                        jaserver.players[player_id].nomination) - 1)
-                                                    jaserver.svsay(
-                                                        "^2[Revoke] ^7%s ^7nomination to %s was revoked (%i nomination%s)." %
-                                                        (player_name, jaserver.players[player_id].nomination,
-                                                         nominations,
-                                                         ("" if nominations == 1 else "s")))
-
-                                                else:
-
-                                                    jaserver.svsay("^2[Revoke] ^7%s ^7nomination revoked!" %
-                                                                   (player_name))
-
-                                                jaserver.players[player_id].nomination = None
-                                                nomination_order.remove(player_id)
-
-                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
-
-                                        elif msg in ("maplist", "!maplist"):
-
-                                            if not config.maps:
-
-                                                jaserver.say("^2[Voting] ^7Map voting is unavailable.")
-
-                                            elif config.nomination_type is None:
-
-                                                jaserver.say(
-                                                    "^2[Nominate] ^7Map nomination is unavailable because the number of maps is less than or equal 5.")
-
-                                            else:
-
-                                                sorted_maps = iter(sorted(
-                                                    (mapname for mapname in iter(config.maps + config.secondary_maps)
-                                                     if (lower(mapname) != current_map and
-                                                         recently_played[lower(mapname)] <= current_time)),
-                                                    key=lower))  # Create an alphanumeric sorted map list.
-
-                                                if not config.nomination_type:  # Remove nominated maps.
-
-                                                    nominated_maps = [player.nomination for player in
-                                                                      jaserver.players.values()
-                                                                      if player.nomination]
-                                                    sorted_maps = (mapname for mapname in sorted_maps if
-                                                                   mapname not in nominated_maps)
-
-                                                # Create split lists for display in the server based on a maximum of MAPLIST_MAX_SIZE bytes per
-                                                # list string.
-
-                                                maplist = {1: []}
-                                                append_map = maplist[1].append
-                                                maplist_number = 1
-                                                maplist_length = 16
-
-                                                for mapname in sorted_maps:
-
-                                                    maplist_length += len(mapname)
-
-                                                    if maplist_length > MAPLIST_MAX_SIZE:
-                                                        maplist_number += 1
-                                                        maplist[maplist_number] = []
-                                                        append_map = maplist[maplist_number].append
-                                                        maplist_length = (15 + len(str(maplist_number)) + len(mapname))
-
-                                                    maplist_length += 2
-                                                    append_map(mapname)
-
-                                                if not maplist[1]:
+                                                try:
 
                                                     jaserver.say(
-                                                        "^2[Maplist] ^7No map is currently available for nomination.")
+                                                        "^2[Elapsed] ^7Time elapsed for the current %s: %s%s" %
+                                                        (elapse, calculate_time(gameinfo[elapse][0], current_time),
+                                                         (" (%i extension%s)" % (gameinfo[elapse][1],
+                                                                                 ("" if gameinfo[elapse][1] == 1 else "s"))
+                                                          if gameinfo[elapse][1] else "")))
 
-                                                elif len(maplist) > 1:
+                                                except KeyError:
 
-                                                    jaserver.say(
-                                                        "^2[Maplist] ^7Usage: %s number (Available map lists: %i)" %
-                                                        (original_msg, len(maplist)))
+                                                    jaserver.say("^2[Elapsed] ^7Incorrect format (map/mode).")
 
-                                                else:
+                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
 
-                                                    jaserver.say("^2[Maplist] ^7%s" % (join(", ", maplist[1])))
+                                            elif msg in ("nextgame", "!nextgame"):
 
-                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
-
-                                        elif startswith(msg, "maplist ") or startswith(msg, "!maplist "):
-
-                                            if not config.maps:
-
-                                                jaserver.say("^2[Voting] ^7Map voting is unavailable.")
-
-                                            elif config.nomination_type is None:
-
-                                                jaserver.say(
-                                                    "^2[Nominate] ^7Map nomination is unavailable because the number of maps is less than or equal 5.")
-
-                                            else:
-
-                                                sorted_maps = iter(sorted(
-                                                    (mapname for mapname in iter(config.maps + config.secondary_maps)
-                                                     if (lower(mapname) != current_map and
-                                                         recently_played[lower(mapname)] <= current_time)),
-                                                    key=lower))  # Create an alphanumeric sorted map list.
-
-                                                if not config.nomination_type:  # Remove nominated maps.
-
-                                                    nominated_maps = [player.nomination for player in
-                                                                      jaserver.players.values()
-                                                                      if player.nomination]
-                                                    sorted_maps = (mapname for mapname in sorted_maps if
-                                                                   mapname not in nominated_maps)
-
-                                                # Create split lists for display in the server based on a maximum of MAPLIST_MAX_SIZE bytes per
-                                                # list string.
-
-                                                maplist = {1: []}
-                                                append_map = maplist[1].append
-                                                maplist_number = 1
-                                                maplist_length = 16
-
-                                                for mapname in sorted_maps:
-
-                                                    maplist_length += len(mapname)
-
-                                                    if maplist_length > MAPLIST_MAX_SIZE:
-                                                        maplist_number += 1
-                                                        maplist[maplist_number] = []
-                                                        append_map = maplist[maplist_number].append
-                                                        maplist_length = (15 + len(str(maplist_number)) + len(mapname))
-
-                                                    maplist_length += 2
-                                                    append_map(mapname)
-
-                                                if not maplist[1]:
-
-                                                    jaserver.say(
-                                                        "^2[Maplist] ^7No map is currently available for nomination.")
-
-                                                else:
-
-                                                    try:
-
-                                                        maplist_number = int(msg[8:])
-                                                        jaserver.say("^2[Maplist %i] ^7%s" % (
-                                                            maplist_number, join(", ", maplist[maplist_number])))
-
-                                                    except (ValueError, KeyError):
-
-                                                        jaserver.say(
-                                                            "^2[Maplist] ^7Invalid map list number (Available map lists: %i)."
-                                                            % (len(maplist)))
-
-                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
-
-                                        elif msg in ("search", "!search"):
-
-                                            if not config.maps:
-
-                                                jaserver.say("^2[Voting] ^7Map voting is unavailable.")
-
-                                            elif config.nomination_type is None:
-
-                                                jaserver.say(
-                                                    "^2[Nominate] ^7Map nomination is unavailable because the number of maps is less than or equal 5.")
-
-                                            else:
-
-                                                jaserver.say("^2[Search] ^7Usage: %s expression" % (original_msg))
-
-                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
-
-                                        elif startswith(msg, "search ") or startswith(msg, "!search "):
-
-                                            if not config.maps:
-
-                                                jaserver.say("^2[Voting] ^7Map voting is unavailable.")
-
-                                            elif config.nomination_type is None:
-
-                                                jaserver.say(
-                                                    "^2[Nominate] ^7Map nomination is unavailable because the number of maps is less than or equal 5.")
-
-                                            else:
-
-                                                search_expression = lstrip(msg[7:])
-
-                                                if search_expression != "*":  # No wildcard.
-                                                    # Search for given expression.
-                                                    maplist = [mapname for mapname in
-                                                               iter(config.maps + config.secondary_maps)
-                                                               if search_expression in lower(mapname)]
-
-                                                else:
-
-                                                    maplist = list(config.maps + config.secondary_maps)
-
-                                                if not maplist:
-
-                                                    jaserver.say(
-                                                        "^2[Search] ^7No matches found for expression ''%s''."
-                                                        % (lstrip(original_msg[7:])))
-
-                                                else:
-
-                                                    sort(maplist, key=lower)
-                                                    maplist = join(", ", maplist)
-
-                                                    if (len(maplist) + 13) > MAPLIST_MAX_SIZE:
-
-                                                        jaserver.say(
-                                                            "^2[Search] ^7Result for expression ''%s'' is too long (greater than %i characters)." %
-                                                            (lstrip(original_msg[7:]), MAPLIST_MAX_SIZE))
-
-                                                    else:
-
-                                                        jaserver.say("^2[Search] ^7%s" % (maplist))
-
-                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
-
-                                        elif msg in ("elapsed", "!elapsed"):
-
-                                            jaserver.say("^2[Elapsed] ^7Usage: %s map/mode" % (original_msg))
-                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
-
-                                        elif startswith(msg, "elapsed ") or startswith(msg, "!elapsed "):
-
-                                            elapse = lstrip(msg[8:])
-
-                                            try:
-
-                                                jaserver.say(
-                                                    "^2[Elapsed] ^7Time elapsed for the current %s: %s%s" %
-                                                    (elapse, calculate_time(gameinfo[elapse][0], current_time),
-                                                     (" (%i extension%s)" % (gameinfo[elapse][1],
-                                                                             ("" if gameinfo[elapse][1] == 1 else "s"))
-                                                      if gameinfo[elapse][1] else "")))
-
-                                            except KeyError:
-
-                                                jaserver.say("^2[Elapsed] ^7Incorrect format (map/mode).")
-
-                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
-
-                                        elif msg in ("nextgame", "!nextgame"):
-
-                                            jaserver.say("^2[Nextgame] ^7No next game is set.")
-                                            jaserver.players[player_id].timer = (current_time + config.flood_protection)
+                                                jaserver.say("^2[Nextgame] ^7No next game is set.")
+                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
 
                         elif not voting_instructions and not start_second_turn and not recover:
 

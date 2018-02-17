@@ -11,6 +11,7 @@ class KillInfo:
         self.double_kill_tracker = []
         self.latest_kills = []
         self.unique_kill_ids = set()
+        self.last_killer = None
 
     def add_kill(self, kill):
         """Logs given kill and returns a suspicion score. 2 should be kickable, 3 and above should be bannable."""
