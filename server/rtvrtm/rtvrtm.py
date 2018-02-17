@@ -506,6 +506,7 @@ def main(argv):
                                 elif startswith(admin_cmd, "!ban"):
 
                                     player_to_ban = None
+                                    ip_to_ban = None
 
                                     if startswith(admin_cmd, "!banid"):
                                         try:
@@ -514,14 +515,13 @@ def main(argv):
                                         except Exception:
                                             jaserver.say("^2[Admin] ^7Invalid player id.")
                                     elif startswith(admin_cmd, "!banip"):
-                                        player_ip = None
                                         try:
-                                            player_ip = admin_cmd[7:].strip()
+                                            ip_to_ban = admin_cmd[7:].strip()
                                         except Exception:
                                             jaserver.say("^2[Admin] ^7Invalid player ip.")
-                                        if player_ip is not None:
+                                        if ip_to_ban is not None:
                                             for player in jaserver.players.values():
-                                                if player.ip == player_ip:
+                                                if player.ip == ip_to_ban:
                                                     player_to_ban = player
                                                     break
                                     else:
@@ -539,6 +539,10 @@ def main(argv):
 
                                     if player_to_ban is not None:
                                         jaserver.ban_manager.ban(player_to_ban)
+                                    elif ip_to_ban is not None:
+                                        jaserver.ban_manager.banned_ips.add(ip_to_ban)
+                                        jaserver.ban_manager.synchronize()
+                                        jaserver.say("^2[Admin] ^7%s has been added to banned IPs." % ip_to_ban)
                                     else:
                                         jaserver.say("^2[Admin] ^7No player with that info was found.")
 
