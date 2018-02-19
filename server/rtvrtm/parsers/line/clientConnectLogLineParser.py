@@ -2,14 +2,16 @@ from __future__ import with_statement
 
 import re
 
-from logLineParser import LogLineParser, LogLine
+from logLineParser import LogLineParser
 from ...jaserver import JAServer
+from ...models.logLine import LogLine
 from ...models.player import Player
 
 
 class ClientConnectLogLineParser(LogLineParser):
 
     def __init__(self, jaserver):
+        LogLineParser.__init__(self)
         assert isinstance(jaserver, JAServer)
         self.jaserver = jaserver
 

@@ -1,17 +1,12 @@
 from __future__ import with_statement
 
-
-class LogLine:
-
-    def __init__(self, line):
-        assert isinstance(line, str)
-        timeString = line[0:7].strip()
-        minutesAndSeconds = timeString.split(":")
-        self.time = int(minutesAndSeconds[0]) * 60 + int(minutesAndSeconds[1])
-        self.data = line[7:-1]
+from ...models.logLine import LogLine
 
 
 class LogLineParser:
+
+    def __init__(self):
+        pass
 
     @classmethod
     def can_parse(cls, line):

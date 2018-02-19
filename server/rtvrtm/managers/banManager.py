@@ -1,11 +1,14 @@
 from __future__ import with_statement
 
 from fileConfigurable import JSONFileConfigurable
+from ..managers.pushNotificationManager import PushNotificationManager
 from ..models.player import Player
 
 
 class BanManager(JSONFileConfigurable):
     """Maintains an IP list and auto-kicks banned IPs."""
+
+    spammer_mute_duration = 10  # in minutes
 
     def __init__(self, jaserver):
         self.jaserver = jaserver
@@ -36,16 +39,16 @@ class BanManager(JSONFileConfigurable):
         assert isinstance(player, Player)
         assert isinstance(kick_reason, str)
         assert isinstance(automatic, bool)
-        print("[BanManager] Kick: %s %s %s" % (player.id, player.name, player.ip))
+        print("[BanManager] Kick: %s %s %s" % (player.identifier, player.name, player.ip))
         self.jaserver.say(
             "^7%s ^1has been %skicked%s." % (player.name, "automatically " if automatic else "", kick_reason))
-        self.jaserver.clientkick(player.id)
+        self.jaserver.clientkick(player.identifier)
 
     def ban(self, player, ban_reason="", automatic=False):
         assert isinstance(player, Player)
         assert isinstance(ban_reason, str)
         assert isinstance(automatic, bool)
-        print("[BanManager] Ban: %s %s %s" % (player.id, player.name, player.ip))
+        print("[BanManager] Ban: %s %s %s" % (player.identifier, player.name, player.ip))
         self.jaserver.svsay(
             "^7%s ^1has been %sbanned%s." % (player.name, "automatically " if automatic else "", ban_reason))
         self.kick(player, " because they are in the ban list")
@@ -74,3 +77,18 @@ class BanManager(JSONFileConfigurable):
         if player.clean_name in ("admin", "server"):
             print("[BanManager] Admin impostor attempt: %s" % player.ip)
             self.kick(player, " because they are trying to impersonate an admin")
+
+    def check_say(self, player):
+        assert isinstance(player, Player)
+        # If player is spamming, mute them for 10 minutes.
+        if player.say_info.is_spamming:
+            self.jaserver.mute(player.identifier, BanManager.spammer_mute_duration)
+            player.say_info.reset()
+            self.jaserver.svsay(
+                "%s ^7has been automatically muted for %d minutes for spamming." % (player.name,
+                                                                                    BanManager.spammer_mute_duration))
+            PushNotificationManager.send(
+                "[%s] %s (%d|%s) has been muted for spamming.\nLast message: %s" % (self.jaserver.gamemode,
+                                                                                    player.clean_name,
+                                                                                    player.identifier, player.ip,
+                                                                                    player.say_info.last_message))

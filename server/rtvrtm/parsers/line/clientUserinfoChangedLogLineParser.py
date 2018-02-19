@@ -2,13 +2,15 @@ from __future__ import with_statement
 
 import re
 
-from logLineParser import LogLineParser, LogLine
+from logLineParser import LogLineParser
 from ...jaserver import JAServer
+from ...models.logLine import LogLine
 
 
 class ClientUserinfoChangedLogLineParser(LogLineParser):
 
     def __init__(self, jaserver):
+        LogLineParser.__init__(self)
         assert isinstance(jaserver, JAServer)
         self.jaserver = jaserver
 
@@ -23,6 +25,6 @@ class ClientUserinfoChangedLogLineParser(LogLineParser):
         player = self.jaserver.players.get(player_id)
         if player is not None:
             try:
-                player.name = re.findall(r'n\\([^\\]*)', line)[0]
+                player.name = re.findall(r'n\\([^\\]*)', line.data)[0]
             except Exception:
                 player.name = ""

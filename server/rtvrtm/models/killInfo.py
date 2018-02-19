@@ -35,7 +35,7 @@ class KillInfo:
             self.double_kill_tracker.append(kill)
         else:
             time_since_last_kill = kill.time - self.double_kill_tracker[0].time
-            if time_since_last_kill <= KillInfo.chain_kill_delay and time_since_last_kill >= 0:
+            if KillInfo.chain_kill_delay >= time_since_last_kill >= 0:
                 self.double_kill_tracker.append(kill)
                 self.double_kills.append(self.double_kill_tracker)
                 self.double_kill_tracker = []
@@ -43,7 +43,7 @@ class KillInfo:
                 new_double_kills = []
                 for double_kill in self.double_kills:
                     time_difference = kill.time - double_kill[1].time
-                    if time_difference <= KillInfo.chain_kill_decay_delay and time_difference >= 0:
+                    if KillInfo.chain_kill_decay_delay >= time_difference >= 0:
                         new_double_kills.append(double_kill)
                 self.double_kills = new_double_kills
             elif time_since_last_kill >= 0:

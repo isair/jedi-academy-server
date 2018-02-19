@@ -1,25 +1,17 @@
-from logLineParser import LogLineParser, LogLine
-from ...managers.pushNotificationManager import PushNotificationManager
+from logLineParser import LogLineParser
 from ...jaserver import JAServer
-from ...utility import remove_color
-
-
-class SayLogLine():
-
-    def __init__(self, log_line):
-        assert isinstance(log_line, LogLine)
-        self.parts = log_line.data.split(":", 2)
-        self.player_id = int(self.parts[0])
-        name_and_message = self.parts[2].split('"', 1)
-        self.message = remove_color(name_and_message[1][:-1]).strip().lower()
+from ...managers.pushNotificationManager import PushNotificationManager
+from ...models.logLine import LogLine
+from ...models.sayLogLine import SayLogLine
 
 
 class SayLogLineParser(LogLineParser):
 
     def __init__(self, jaserver):
+        LogLineParser.__init__(self)
         assert isinstance(jaserver, JAServer)
         self.jaserver = jaserver
-        # TODO: Read from configuration file?
+        # TODO: Read from a configuration file.
         self.watched_words = ["lame", "lamin", "ban", "admin", "glitch"]
 
     @classmethod
@@ -32,6 +24,13 @@ class SayLogLineParser(LogLineParser):
         assert isinstance(line, LogLine)
         say_line = SayLogLine(line)
         self.__send_push_notification_if_needed(say_line)
+        if self.jaserver.gamemode != "duel":
+            # Since spamming is not an issue in duel servers, don't bother on one.
+            player = self.jaserver.players.get(say_line.player_id, None)
+            if player is not None:
+                player.say_info.add_message(say_line.message)
+                self.jaserver.ban_manager.check_say(player)
+        # TODO: Move parsing of all say commands here.
 
     def __send_push_notification_if_needed(self, say_line):
         assert isinstance(say_line, SayLogLine)
@@ -39,9 +38,12 @@ class SayLogLineParser(LogLineParser):
             player = self.jaserver.players.get(say_line.player_id, None)
             if player is None:
                 return
-            push_message = "%s (%s): %s" % (player.clean_name, player.ip, say_line.message)
+            push_message = "[%s] %s (%d|%s): %s" % (self.jaserver.gamemode,
+                                                    player.clean_name,
+                                                    player.id,
+                                                    player.ip,
+                                                    say_line.message)
             last_killer = player.kill_info.last_killer
             if last_killer is not None:
                 push_message += "\nLast killer: %s (%s)" % (last_killer.clean_name, last_killer.ip)
             PushNotificationManager.send(push_message)
-

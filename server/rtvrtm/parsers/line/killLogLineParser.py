@@ -1,13 +1,15 @@
 from __future__ import with_statement
 
-from logLineParser import LogLineParser, LogLine
+from logLineParser import LogLineParser
 from ...jaserver import JAServer
 from ...models.kill import Kill
+from ...models.logLine import LogLine
 
 
 class KillLogLineParser(LogLineParser):
 
     def __init__(self, jaserver):
+        LogLineParser.__init__(self)
         assert isinstance(jaserver, JAServer)
         self.jaserver = jaserver
 

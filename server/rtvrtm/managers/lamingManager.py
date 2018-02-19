@@ -24,29 +24,37 @@ class LamingManager:
             return
         elif score == 1:
             if score != previous_score:
-                print("[LamingManager] Suspect: %d" % player.id)
+                print("[LamingManager] Suspect: %d" % player.identifier)
                 self.jaserver.svsay(
                     "^2[Fairplay] ^7%s ^7is now a laming suspect. An admin has been notified." % player.name)
-                PushNotificationManager.send("%s (%s) has been warned." % (player.clean_name, player.ip))
+                PushNotificationManager.send("[%s] %s (%d|%s) has been warned." % (self.jaserver.gamemode,
+                                                                                   player.clean_name,
+                                                                                   player.identifier,
+                                                                                   player.ip))
                 self.log_incident(player)
             # TODO: Check reports.
         elif score >= 2:
-            print("[LamingManager] Possible lamer: %d" % player.id)
+            print("[LamingManager] Possible lamer: %d" % player.identifier)
             self.jaserver.svsay(
                 "^2[Fairplay] ^7%s ^7has been kicked for possible laming. An admin has been notified." % player.name)
             self.jaserver.ban_manager.kick(player, " for possible laming", True)
-            PushNotificationManager.send(
-                "%s (%s) has been kicked with score %d." % (player.clean_name, player.ip, score))
+            PushNotificationManager.send("[%s] %s (%d|%s) has been kicked with score %d." % (self.jaserver.gamemode,
+                                                                                             player.clean_name,
+                                                                                             player.identifier,
+                                                                                             player.ip,
+                                                                                             score))
             self.log_incident(player)
         # elif score >= 3:
         #     print("[LamingManager] Lamer: %d" % player.id)
         #     self.jaserver.ban_manager.ban(player, " for laming", True)
         #     self.log_incident(player)
 
-    def log_incident(self, player):
-        threading.Thread(target=self.__log_incident__, args=(player,)).start()
+    @staticmethod
+    def log_incident(player):
+        threading.Thread(target=LamingManager.__log_incident, args=(player,)).start()
 
-    def __log_incident__(self, player):
+    @staticmethod
+    def __log_incident(player):
         directory_name = "/jedi-academy/laming-manager-logs/"
         directory_name += player.ip if player.name == "" else player.name
         if not os.path.exists(directory_name):

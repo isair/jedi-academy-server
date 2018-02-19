@@ -152,7 +152,7 @@ def main(argv):
     if not config.rtm:
         status.times[1] = object()
 
-    Check_Status = status.Check
+    Check_Status = status.check
     print("Done!")
     print("[*] Reading log file until EOF..."),
 
@@ -1133,10 +1133,12 @@ def main(argv):
                                                     if config.pick_secondary_maps:
                                                         available_maps += config.secondary_maps
 
-                                                    available_maps = (lower(mapname) for mapname in iter(available_maps))
+                                                    available_maps = (lower(mapname) for mapname in
+                                                                      iter(available_maps))
                                                     available_maps = sum((True for mapname in available_maps
                                                                           if (mapname != current_map and
-                                                                              recently_played[mapname] <= current_time)))
+                                                                              recently_played[
+                                                                                  mapname] <= current_time)))
                                                     available_maps += len(nomination_order)
 
                                                     if not available_maps:
@@ -1152,7 +1154,8 @@ def main(argv):
                                                         jaserver.say(
                                                             "^2[RTV] ^7%s ^7already wanted to rock the vote (%i/%i)."
                                                             % (player_name,
-                                                               sum((player.rtv for player in jaserver.players.values())),
+                                                               sum((player.rtv for player in
+                                                                    jaserver.players.values())),
                                                                rtv_players))
 
                                                     else:
@@ -1164,7 +1167,8 @@ def main(argv):
                                                                                jaserver.players.values())),
                                                                           rtv_players))
 
-                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
+                                                jaserver.players[player_id].timer = (
+                                                        current_time + config.flood_protection)
 
                                             elif msg in ("unrtv", "!unrtv"):
 
@@ -1192,10 +1196,12 @@ def main(argv):
                                                     if config.pick_secondary_maps:
                                                         available_maps += config.secondary_maps
 
-                                                    available_maps = (lower(mapname) for mapname in iter(available_maps))
+                                                    available_maps = (lower(mapname) for mapname in
+                                                                      iter(available_maps))
                                                     available_maps = sum((True for mapname in available_maps
                                                                           if (mapname != current_map and
-                                                                              recently_played[mapname] <= current_time)))
+                                                                              recently_played[
+                                                                                  mapname] <= current_time)))
                                                     available_maps += len(nomination_order)
 
                                                     if not available_maps:
@@ -1210,7 +1216,8 @@ def main(argv):
                                                         jaserver.say(
                                                             "^2[RTV] ^7%s ^7didn't want to rock the vote yet (%i/%i)."
                                                             % (player_name,
-                                                               sum((player.rtv for player in jaserver.players.values())),
+                                                               sum((player.rtv for player in
+                                                                    jaserver.players.values())),
                                                                rtv_players))
 
                                                     else:
@@ -1219,10 +1226,12 @@ def main(argv):
                                                         jaserver.svsay(
                                                             "^2[RTV] ^7%s ^7no longer wants to rock the vote (%i/%i)."
                                                             % (player_name,
-                                                               sum((player.rtv for player in jaserver.players.values())),
+                                                               sum((player.rtv for player in
+                                                                    jaserver.players.values())),
                                                                rtv_players))
 
-                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
+                                                jaserver.players[player_id].timer = (
+                                                        current_time + config.flood_protection)
 
                                             elif msg in ("rtm", "!rtm"):
 
@@ -1268,7 +1277,8 @@ def main(argv):
                                                                            jaserver.players.values())),
                                                                       rtm_players))
 
-                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
+                                                jaserver.players[player_id].timer = (
+                                                        current_time + config.flood_protection)
 
                                             elif msg in ("unrtm", "!unrtm"):
 
@@ -1314,7 +1324,8 @@ def main(argv):
                                                            sum((player.rtm for player in jaserver.players.values())),
                                                            rtm_players))
 
-                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
+                                                jaserver.players[player_id].timer = (
+                                                        current_time + config.flood_protection)
 
                                             elif msg in ("nominate", "!nominate"):
 
@@ -1331,7 +1342,8 @@ def main(argv):
 
                                                     jaserver.say("^2[Nominate] ^7Usage: %s mapname" % (original_msg))
 
-                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
+                                                jaserver.players[player_id].timer = (
+                                                        current_time + config.flood_protection)
 
                                             elif startswith(msg, "nominate ") or startswith(msg, "!nominate "):
 
@@ -1409,7 +1421,8 @@ def main(argv):
                                                                 jaserver.players[player_id].nomination = compare_map[0]
                                                                 nomination_order.append(player_id)
 
-                                                    elif len(nominated_maps) < 5 or jaserver.players[player_id].nomination:
+                                                    elif len(nominated_maps) < 5 or jaserver.players[
+                                                        player_id].nomination:
 
                                                         if not compare_map:
 
@@ -1458,7 +1471,8 @@ def main(argv):
                                                         jaserver.say(
                                                             "^2[Nominate] ^7Maximum number of nominations (5) reached.")
 
-                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
+                                                jaserver.players[player_id].timer = (
+                                                        current_time + config.flood_protection)
 
                                             elif msg in ("revoke", "!revoke"):
 
@@ -1497,7 +1511,8 @@ def main(argv):
                                                     jaserver.players[player_id].nomination = None
                                                     nomination_order.remove(player_id)
 
-                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
+                                                jaserver.players[player_id].timer = (
+                                                        current_time + config.flood_protection)
 
                                             elif msg in ("maplist", "!maplist"):
 
@@ -1513,7 +1528,8 @@ def main(argv):
                                                 else:
 
                                                     sorted_maps = iter(sorted(
-                                                        (mapname for mapname in iter(config.maps + config.secondary_maps)
+                                                        (mapname for mapname in
+                                                         iter(config.maps + config.secondary_maps)
                                                          if (lower(mapname) != current_map and
                                                              recently_played[lower(mapname)] <= current_time)),
                                                         key=lower))  # Create an alphanumeric sorted map list.
@@ -1542,7 +1558,8 @@ def main(argv):
                                                             maplist_number += 1
                                                             maplist[maplist_number] = []
                                                             append_map = maplist[maplist_number].append
-                                                            maplist_length = (15 + len(str(maplist_number)) + len(mapname))
+                                                            maplist_length = (
+                                                                    15 + len(str(maplist_number)) + len(mapname))
 
                                                         maplist_length += 2
                                                         append_map(mapname)
@@ -1562,7 +1579,8 @@ def main(argv):
 
                                                         jaserver.say("^2[Maplist] ^7%s" % (join(", ", maplist[1])))
 
-                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
+                                                jaserver.players[player_id].timer = (
+                                                        current_time + config.flood_protection)
 
                                             elif startswith(msg, "maplist ") or startswith(msg, "!maplist "):
 
@@ -1578,7 +1596,8 @@ def main(argv):
                                                 else:
 
                                                     sorted_maps = iter(sorted(
-                                                        (mapname for mapname in iter(config.maps + config.secondary_maps)
+                                                        (mapname for mapname in
+                                                         iter(config.maps + config.secondary_maps)
                                                          if (lower(mapname) != current_map and
                                                              recently_played[lower(mapname)] <= current_time)),
                                                         key=lower))  # Create an alphanumeric sorted map list.
@@ -1607,7 +1626,8 @@ def main(argv):
                                                             maplist_number += 1
                                                             maplist[maplist_number] = []
                                                             append_map = maplist[maplist_number].append
-                                                            maplist_length = (15 + len(str(maplist_number)) + len(mapname))
+                                                            maplist_length = (
+                                                                    15 + len(str(maplist_number)) + len(mapname))
 
                                                         maplist_length += 2
                                                         append_map(mapname)
@@ -1631,7 +1651,8 @@ def main(argv):
                                                                 "^2[Maplist] ^7Invalid map list number (Available map lists: %i)."
                                                                 % (len(maplist)))
 
-                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
+                                                jaserver.players[player_id].timer = (
+                                                        current_time + config.flood_protection)
 
                                             elif msg in ("search", "!search"):
 
@@ -1648,7 +1669,8 @@ def main(argv):
 
                                                     jaserver.say("^2[Search] ^7Usage: %s expression" % (original_msg))
 
-                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
+                                                jaserver.players[player_id].timer = (
+                                                        current_time + config.flood_protection)
 
                                             elif startswith(msg, "search ") or startswith(msg, "!search "):
 
@@ -1696,12 +1718,14 @@ def main(argv):
 
                                                             jaserver.say("^2[Search] ^7%s" % (maplist))
 
-                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
+                                                jaserver.players[player_id].timer = (
+                                                        current_time + config.flood_protection)
 
                                             elif msg in ("elapsed", "!elapsed"):
 
                                                 jaserver.say("^2[Elapsed] ^7Usage: %s map/mode" % (original_msg))
-                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
+                                                jaserver.players[player_id].timer = (
+                                                        current_time + config.flood_protection)
 
                                             elif startswith(msg, "elapsed ") or startswith(msg, "!elapsed "):
 
@@ -1713,19 +1737,22 @@ def main(argv):
                                                         "^2[Elapsed] ^7Time elapsed for the current %s: %s%s" %
                                                         (elapse, calculate_time(gameinfo[elapse][0], current_time),
                                                          (" (%i extension%s)" % (gameinfo[elapse][1],
-                                                                                 ("" if gameinfo[elapse][1] == 1 else "s"))
+                                                                                 ("" if gameinfo[elapse][
+                                                                                            1] == 1 else "s"))
                                                           if gameinfo[elapse][1] else "")))
 
                                                 except KeyError:
 
                                                     jaserver.say("^2[Elapsed] ^7Incorrect format (map/mode).")
 
-                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
+                                                jaserver.players[player_id].timer = (
+                                                        current_time + config.flood_protection)
 
                                             elif msg in ("nextgame", "!nextgame"):
 
                                                 jaserver.say("^2[Nextgame] ^7No next game is set.")
-                                                jaserver.players[player_id].timer = (current_time + config.flood_protection)
+                                                jaserver.players[player_id].timer = (
+                                                        current_time + config.flood_protection)
 
                         elif not voting_instructions and not start_second_turn and not recover:
 

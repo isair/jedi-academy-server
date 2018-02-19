@@ -59,7 +59,7 @@ class JAServer(object):
         sock.shutdown(SHUT_RDWR)
         sock.close()
 
-        if error != None:
+        if error is not None:
             raise error
 
         return reply
@@ -87,6 +87,9 @@ class JAServer(object):
 
     def clientkick(self, player_id):
         return self.rcon("clientkick %i" % player_id)
+
+    def mute(self, player_id, duration):
+        return self.rcon("mute %i %i" % (player_id, duration))
 
     def test_connection(self):
         reply = self.status()

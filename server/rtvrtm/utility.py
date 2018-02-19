@@ -9,7 +9,9 @@ class SortableDict(dict):
 
 
 class DummyTime(object):
-    """Dummy class to be used as a replacement for a float time object returned by time.time() on round-based votings."""
+    """
+    Dummy class to be used as a replacement for a float time object returned by time.time() on round-based votings.
+    """
 
     def __iadd__(self, *args):  # Operator overload will return the object itself without any changes
         return self  # on assignment addition operations.

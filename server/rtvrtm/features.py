@@ -14,7 +14,7 @@ class Features(object):
         self.times = [0, 0]
         self.jaserver = jaserver
 
-    def Check(self):
+    def check(self):
         current_time = time()
         if not self.rtv and not self.rtm:
             if self.times[0] <= current_time and self.times[1] <= current_time:

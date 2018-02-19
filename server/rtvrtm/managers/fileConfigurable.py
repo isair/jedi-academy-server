@@ -46,8 +46,8 @@ class SetFileConfigurable(FileConfigurable):
 
     def __read_configuration__(self):
         with open(self.configuration_file_path, "rt") as f:
-            list = [self.parse_line(line) for line in f]
-        return set(list)
+            data = [self.parse_line(line) for line in f]
+        return set(data)
 
     def load_configuration(self):
         self.data = self.__read_configuration__()

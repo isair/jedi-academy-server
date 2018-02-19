@@ -13,6 +13,7 @@ from ...utility import fix_line
 class CatchUpLogFileParser(LogFileParser):
 
     def __init__(self, jaserver):
+        LogFileParser.__init__(self)
         assert isinstance(jaserver, JAServer)
         self.jaserver = jaserver
 

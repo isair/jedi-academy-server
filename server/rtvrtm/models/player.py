@@ -1,21 +1,23 @@
 from __future__ import with_statement
 
 from ..models.killInfo import KillInfo
+from ..models.sayInfo import SayInfo
 from ..utility import remove_color
 
 
 class Player(object):
     """Represents an in-game player."""
 
-    def __init__(self, id, ip):
-        assert isinstance(id, int)
+    def __init__(self, identifier, ip):
+        assert isinstance(identifier, int)
         assert isinstance(ip, str)
 
-        self.id = id
+        self.identifier = identifier
         self.ip = ip
         self.name = ""
 
         self.kill_info = KillInfo()
+        self.say_info = SayInfo()
 
         self.timer = 0
         self.rtv = False

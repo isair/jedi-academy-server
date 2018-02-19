@@ -2,7 +2,10 @@ import httplib
 import urllib
 
 
-class PushNotificationManager():
+class PushNotificationManager:
+
+    def __init__(self):
+        pass
 
     @staticmethod
     def send(message):
