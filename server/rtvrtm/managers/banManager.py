@@ -94,3 +94,5 @@ class BanManager(JSONFileConfigurable):
                                                                                     player.clean_name,
                                                                                     player.identifier, player.ip,
                                                                                     player.say_info.last_message))
+            return True
+        return False
