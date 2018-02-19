@@ -45,9 +45,10 @@ class LamingManager:
                                                                                              score))
             self.log_incident(player)
         # elif score >= 3:
-        #     print("[LamingManager] Lamer: %d" % player.id)
-        #     self.jaserver.ban_manager.ban(player, " for laming", True)
-        #     self.log_incident(player)
+
+    #     print("[LamingManager] Lamer: %d" % player.identifier)
+    #     self.jaserver.ban_manager.ban(player, " for laming", True)
+    #     self.log_incident(player)
 
     @staticmethod
     def log_incident(player):

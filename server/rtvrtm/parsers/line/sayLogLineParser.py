@@ -40,7 +40,7 @@ class SayLogLineParser(LogLineParser):
                 return
             push_message = "[%s] %s (%d|%s): %s" % (self.jaserver.gamemode,
                                                     player.clean_name,
-                                                    player.id,
+                                                    player.identifier,
                                                     player.ip,
                                                     say_line.message)
             last_killer = player.kill_info.last_killer

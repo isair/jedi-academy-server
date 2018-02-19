@@ -67,6 +67,8 @@ class BanManager(JSONFileConfigurable):
         else:
             self.jaserver.say("^2[BanManager] ^7IP not in banned IPs.")
 
+    # Move checks to another class.
+
     def check_player(self, player):
         assert isinstance(player, Player)
         # If player is in the ban list, kick them.
