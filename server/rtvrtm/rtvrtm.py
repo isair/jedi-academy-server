@@ -17,6 +17,7 @@ from features import Features
 from jaserver import JAServer
 from models.player import Player
 from parsers.file.catchUpLogFileParser import CatchUpLogFileParser
+from parsers.line.initGameLogLineParser import InitGameLogLineParser
 from parsers.line.killLogLineParser import KillLogLineParser
 from parsers.line.sayLogLineParser import SayLogLineParser
 from utility import SortableDict, DummyTime, fix_line, remove_color, calculate_time
@@ -135,6 +136,7 @@ def main(argv):
 
     kill_log_line_parser = KillLogLineParser(jaserver)
     say_log_line_parser = SayLogLineParser(jaserver)
+    init_game_log_line_parser = InitGameLogLineParser(jaserver, catch_up=True)
 
     nomination_order = []
     admin_choices = []
@@ -352,15 +354,9 @@ def main(argv):
 
                             kill_log_line_parser.parse(line)
 
-                        elif startswith(snipped_line, "InitGame: "):
+                        elif InitGameLogLineParser.can_parse(line):
 
-                            cvars = split(lower(snipped_line[11:]), "\\")
-                            cvars = dict(cvars[i:i + 2] for i in xrange(0, len(cvars),
-                                                                        2))  # Create cvar dictionary through the dict constructor.
-                            cvars["g_authenticity"] = int(cvars["g_authenticity"])
-
-                            jaserver.cvars = cvars
-                            jaserver.message_manager.say_timed_messages()
+                            init_game_log_line_parser.parse(line)
 
                             if current_mode != jaserver.cvars["g_authenticity"] or current_map != jaserver.cvars[
                                 "mapname"]:

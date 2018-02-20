@@ -25,7 +25,7 @@ class CatchUpLogFileParser(LogFileParser):
         client_connect_log_line_parser = ClientConnectLogLineParser(self.jaserver)
         client_userinfo_changed_log_line_parser = ClientUserinfoChangedLogLineParser(self.jaserver)
         client_disconnect_log_line_parser = ClientDisconnectLogLineParser(self.jaserver)
-        init_game_log_line_parser = InitGameLogLineParser(self.jaserver)
+        init_game_log_line_parser = InitGameLogLineParser(self.jaserver, catch_up=True)
         for line in log:
             if not line.endswith("\n"):
                 continue
