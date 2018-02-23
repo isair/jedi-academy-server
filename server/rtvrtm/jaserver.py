@@ -1,10 +1,10 @@
 from __future__ import with_statement
 
-from socket import (socket, AF_INET, SOCK_DGRAM, SHUT_RDWR, timeout as socketTimeout, error as socketError)
+from socket import (socket, AF_INET, SOCK_DGRAM, SHUT_RDWR, timeout as socket_timeout, error as socket_error)
 
-import managers.banManager
-import managers.lamingManager
+import managers.judgmentManager
 import managers.messageManager
+import managers.punishmentManager
 
 
 class JAServer(object):
@@ -22,8 +22,8 @@ class JAServer(object):
         self.use_say_only = use_say_only
 
         self.message_manager = managers.messageManager.MessageManager(self)
-        self.ban_manager = managers.banManager.BanManager(self)
-        self.laming_manager = managers.lamingManager.LamingManager(self)
+        self.judgment_manager = managers.judgmentManager.JudgmentManager(self)
+        self.punishment_manager = managers.punishmentManager.PunishmentManager(self)
 
     @property
     def gamemode(self):
@@ -41,19 +41,19 @@ class JAServer(object):
         error = None
         reply = ""
 
-        while (True):
+        while True:
             try:
                 sock.send("\xff\xff\xff\xff" + payload)
                 reply = sock.recv(buffer_size)
                 break
-            except socketTimeout:
+            except socket_timeout:
                 if not retry:
-                    error = socketTimeout
+                    error = socket_timeout
                     break
                 else:
                     continue
-            except socketError:
-                error = socketError
+            except socket_error:
+                error = socket_error
                 break
 
         sock.shutdown(SHUT_RDWR)

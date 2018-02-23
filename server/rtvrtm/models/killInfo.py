@@ -91,7 +91,7 @@ class KillInfo:
         #     killstreak_4in20 = new_killstreak_4in20
         #     killstreak_4in20.append(kill)
         #     if len(killstreak_4in20) >= 4:
-        #         self.jaserver.ban_manager.ban(player, " for laming.", True)
+        #         self.jaserver.punishment_manager.ban(player, " for laming.", True)
         #     # Check for 3 kills within 15 seconds.
         #     new_killstreak_3in15 = []
         #     for olderKill in killstreak_3in15:
@@ -100,7 +100,7 @@ class KillInfo:
         #     killstreak_3in15 = new_killstreak_3in15
         #     killstreak_3in15.append(kill)
         #     if len(killstreak_3in15) == 3:
-        #         self.jaserver.ban_manager.kick(player, " for possible laming.", True)
+        #         self.jaserver.punishment_manager.kick(player, " for possible laming.", True)
         #     # Check for 2 kills within 2 seconds and this occuring >= 2 times.
         #     # Check for 3 kills within 10 seconds and a report by one of the victims.
         #     # TODO

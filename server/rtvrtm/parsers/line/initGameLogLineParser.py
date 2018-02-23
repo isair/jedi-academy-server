@@ -1,5 +1,3 @@
-from __future__ import with_statement
-
 from logLineParser import LogLineParser
 from ...jaserver import JAServer
 from ...models.logLine import LogLine
@@ -27,6 +25,3 @@ class InitGameLogLineParser(LogLineParser):
         if self.catch_up:
             return
         self.jaserver.message_manager.say_timed_messages()
-        for player in self.jaserver.players.values():
-            player.duel_challengee = None
-            player.duel_pair = None

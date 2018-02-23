@@ -136,7 +136,7 @@ def main(argv):
 
     kill_log_line_parser = KillLogLineParser(jaserver)
     say_log_line_parser = SayLogLineParser(jaserver)
-    init_game_log_line_parser = InitGameLogLineParser(jaserver, catch_up=True)
+    init_game_log_line_parser = InitGameLogLineParser(jaserver)
 
     nomination_order = []
     admin_choices = []
@@ -303,7 +303,7 @@ def main(argv):
                                 except Exception:
                                     player.name = ""
 
-                                jaserver.ban_manager.check_player(player)
+                                jaserver.judgment_manager.check_entry(player)
 
                         elif startswith(snipped_line, "ClientDisconnect: "):
 
@@ -466,7 +466,7 @@ def main(argv):
                                         jaserver.bindaddr = config.bindaddr
                                         jaserver.rcon_pwd = config.rcon_pwd
 
-                                        jaserver.ban_manager.load_configuration()
+                                        jaserver.punishment_manager.load_configuration()
                                         jaserver.message_manager.load_configuration()
 
                                         jaserver.svsay("^2[Status] ^7Rehash successful!")
@@ -497,7 +497,7 @@ def main(argv):
 
                                     try:
                                         ip_to_remove = admin_cmd[7:].strip()
-                                        jaserver.ban_manager.unban_ip(ip_to_remove)
+                                        jaserver.punishment_manager.unban_ip(ip_to_remove)
                                     except Exception:
                                         jaserver.say("^2[Admin] ^7Correct usage is: !unban ip")
 
@@ -536,10 +536,10 @@ def main(argv):
                                                     break
 
                                     if player_to_ban is not None:
-                                        jaserver.ban_manager.ban(player_to_ban)
+                                        jaserver.punishment_manager.ban(player_to_ban, automatic=False)
                                     elif ip_to_ban is not None:
-                                        jaserver.ban_manager.banned_ips.add(ip_to_ban)
-                                        jaserver.ban_manager.synchronize()
+                                        jaserver.punishment_manager.banned_ips.add(ip_to_ban)
+                                        jaserver.punishment_manager.synchronize()
                                         jaserver.say("^2[Admin] ^7%s has been added to banned IPs." % ip_to_ban)
                                     else:
                                         jaserver.say("^2[Admin] ^7No player with that info was found.")

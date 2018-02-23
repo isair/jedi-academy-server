@@ -30,7 +30,7 @@ class KillLogLineParser(LogLineParser):
                 # Keep detailed track of kills and calculate lamer suspicion score only on duel servers.
                 previous_suspicion_score = killer.kill_info.lamer_suspicion_score
                 killer.kill_info.add_kill(Kill(line.time, killer_id, victim_id))
-                self.jaserver.laming_manager.check_player(killer, previous_suspicion_score)
+                self.jaserver.judgment_manager.check_kill_info(killer, previous_suspicion_score)
             victim = self.jaserver.players.get(victim_id, None)
             if victim is not None:
                 victim.kill_info.last_killer = killer

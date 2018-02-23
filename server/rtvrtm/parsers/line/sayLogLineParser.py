@@ -36,7 +36,7 @@ class SayLogLineParser(LogLineParser):
         player = self.jaserver.players.get(say_line.player_id, None)
         if player is not None:
             player.say_info.add_message(say_line.message)
-            return self.jaserver.ban_manager.check_say(player)
+            return self.jaserver.judgment_manager.check_say_info(player)
         return False
 
     def __send_push_notification_if_needed(self, say_line):
