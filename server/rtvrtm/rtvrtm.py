@@ -501,6 +501,45 @@ def main(argv):
                                     except Exception:
                                         jaserver.say("^2[Admin] ^7Correct usage is: !unban ip")
 
+                                elif startswith(admin_cmd, "!kick"):
+
+                                    player_to_kick = None
+                                    ip_to_kick = None
+
+                                    if startswith(admin_cmd, "!kickid"):
+                                        try:
+                                            player_id = int(admin_cmd[8:].strip())
+                                            player_to_kick = jaserver.players.get(player_id)
+                                        except Exception:
+                                            jaserver.say("^2[Admin] ^7Invalid player id.")
+                                    elif startswith(admin_cmd, "!kickip"):
+                                        try:
+                                            ip_to_kick = admin_cmd[8:].strip()
+                                        except Exception:
+                                            jaserver.say("^2[Admin] ^7Invalid player ip.")
+                                        if ip_to_kick is not None:
+                                            for player in jaserver.players.values():
+                                                if player.ip == ip_to_kick:
+                                                    player_to_kick = player
+                                                    break
+                                    else:
+                                        try:
+                                            player_name = strip(remove_color(admin_cmd[6:]))
+                                        except Exception:
+                                            player_name = ""
+                                        if player_name == "":
+                                            jaserver.say("^2[Admin] ^7Invalid player name.")
+                                        else:
+                                            for player in jaserver.players.values():
+                                                if lower(strip(remove_color(player.name))) == player_name:
+                                                    player_to_kick = player
+                                                    break
+
+                                    if player_to_kick is not None:
+                                        jaserver.punishment_manager.kick(player_to_kick, automatic=False)
+                                    else:
+                                        jaserver.say("^2[Admin] ^7No player with that info was found.")
+
                                 elif startswith(admin_cmd, "!ban"):
 
                                     player_to_ban = None
