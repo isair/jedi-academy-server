@@ -11,10 +11,40 @@ class MessageManager(JSONFileConfigurable):
 
     def __init__(self, jaserver):
         self.jaserver = jaserver
+        self.timed_messages_request_id = 0
         # TODO: Read path from the config
         JSONFileConfigurable.__init__(self, "/jedi-academy/messages.json")
 
-    def __say_messages__(self, context, prefix="^7", use_random_choice=False, random_choice_count=1):
+    # TODO: Move this and other voting logic to a voting manager and properties to a vote class.
+    def say_voting_message(self, voting_name, countdown, countdown_type, total_votes, total_players, votes_items):
+        self.jaserver.svsay("^2[%s] ^7Type !number to vote. Voting will complete in ^2%i ^7%s%s (%i/%i)."
+                            % (voting_name, countdown, countdown_type, ("" if countdown == 1 else "s"),
+                               total_votes, total_players))
+        self.jaserver.svsay("^2[Votes] ^7%s" % (", ".join(("%i(%i): %s" % (vote_id, vote_count, vote_display_value)
+                                                           for
+                                                           (vote_id,
+                                                            (vote_count, priority, vote_value, vote_display_value))
+                                                           in votes_items()))))
+
+    def say_timed_messages(self):
+        self.timed_messages_request_id += 1
+        if self.timed_messages_request_id > 100:
+            self.timed_messages_request_id = 0
+        threading.Timer(21.0,
+                        self.__say_messages_thread,
+                        ["welcome", self.timed_messages_request_id]).start()
+        threading.Timer(45.0,
+                        self.__say_messages_thread,
+                        ["tips", self.timed_messages_request_id, "^2[Tip] ^7", True]).start()
+        threading.Timer(60.0,
+                        self.__say_messages_thread,
+                        ["warnings", self.timed_messages_request_id, "^1"]).start()
+
+    def __say_messages_under(self, context, prefix="^7", use_random_choice=False, random_choice_count=1):
+        assert isinstance(context, str)
+        assert isinstance(prefix, str)
+        assert isinstance(use_random_choice, bool)
+        assert isinstance(random_choice_count, int)
         messages = []
         try:
             messages_dict = self.json_dict[context]
@@ -35,27 +65,15 @@ class MessageManager(JSONFileConfigurable):
                 print("ERROR: Failed to say %s message: %s" % (context, message))
                 print(e)
 
-    def say_timed_messages(self):
-        threading.Timer(21.0, self.say_welcome).start()
-        threading.Timer(45.0, self.say_random_tip).start()
-        threading.Timer(60.0, self.say_warnings).start()
-
-    def say_welcome(self):
-        self.__say_messages__("welcome")
-
-    def say_random_tip(self):
-        self.__say_messages__("tips", "^2[Tip] ^7", True)
-
-    def say_warnings(self):
-        self.__say_messages__("warnings", "^1")
-
-    # TODO: Move this and other voting logic to a voting manager and properties to a vote class.
-    def say_voting_message(self, voting_name, countdown, countdown_type, total_votes, total_players, votes_items):
-        self.jaserver.svsay("^2[%s] ^7Type !number to vote. Voting will complete in ^2%i ^7%s%s (%i/%i)."
-                            % (voting_name, countdown, countdown_type, ("" if countdown == 1 else "s"),
-                               total_votes, total_players))
-        self.jaserver.svsay("^2[Votes] ^7%s" % (", ".join(("%i(%i): %s" % (vote_id, vote_count, vote_display_value)
-                                                           for
-                                                           (vote_id,
-                                                            (vote_count, priority, vote_value, vote_display_value))
-                                                           in votes_items()))))
+    def __say_messages_thread(self, context, request_id, prefix="^7", use_random_choice=False, random_choice_count=1):
+        assert isinstance(context, str)
+        assert isinstance(request_id, int)
+        assert isinstance(prefix, str)
+        assert isinstance(use_random_choice, bool)
+        assert isinstance(random_choice_count, int)
+        if request_id != self.timed_messages_request_id:
+            return
+        self.__say_messages_under(context,
+                                  prefix=prefix,
+                                  use_random_choice=use_random_choice,
+                                  random_choice_count=random_choice_count)
