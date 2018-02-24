@@ -30,9 +30,6 @@ class SayLogLineParser(LogLineParser):
 
     def __handle_spam(self, say_line):
         assert isinstance(say_line, SayLogLine)
-        if self.jaserver.gamemode == "duel":
-            # Since spamming is not an issue in duel servers, don't bother on one.
-            return False
         player = self.jaserver.players.get(say_line.player_id, None)
         if player is not None:
             player.say_info.add_message(say_line.message)
