@@ -28,9 +28,11 @@ class KillLogLineParser(LogLineParser):
         if killer is not None:
             if self.jaserver.gamemode == "duel":
                 # Keep detailed track of kills and calculate lamer suspicion score only on duel servers.
-                previous_suspicion_score = killer.kill_info.lamer_suspicion_score
-                killer.kill_info.add_kill(Kill(line.time, killer_id, victim_id))
-                self.jaserver.judgment_manager.check_kill_info(killer, previous_suspicion_score)
+                previous_lamer_status = killer.kill_info.lamer_status
+                killer.kill_info.add_kill(Kill(line.time, killer_id, victim_id),
+                                          player_count=len(self.jaserver.players))
+                self.jaserver.judgment_manager.check_kill_info(killer, previous_lamer_status)
+            # Update latest kill info on all modes to catch people such as glitchers.
             victim = self.jaserver.players.get(victim_id, None)
             if victim is not None:
                 victim.kill_info.last_killer = killer
