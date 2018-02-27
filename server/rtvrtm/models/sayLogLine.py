@@ -6,6 +6,7 @@ class SayLogLine:
 
     def __init__(self, log_line):
         assert isinstance(log_line, LogLine)
+        self.time = log_line.time
         parts = log_line.data.split(":", 2)
         self.player_id = int(parts[0])
         name_and_message = parts[2].split('"', 1)

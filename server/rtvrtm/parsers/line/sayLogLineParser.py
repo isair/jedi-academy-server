@@ -33,7 +33,7 @@ class SayLogLineParser(LogLineParser):
         assert isinstance(say_line, SayLogLine)
         player = self.jaserver.players.get(say_line.player_id, None)
         if player is not None:
-            player.say_info.add_message(say_line.message)
+            player.say_info.add_message(say_line)
             return self.jaserver.judgment_manager.check_say_info(player)
         return False
 
