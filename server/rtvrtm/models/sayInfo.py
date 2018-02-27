@@ -4,7 +4,7 @@ import time
 class SayInfo:
     same_messages_repeat_limit = 6
     same_messages_decay_duration = 60
-    same_message_tolerant_words = ['lol', 'gf', 'gf!', 'gg', 'gz']
+    same_message_tolerant_words = {'lol', 'gf', 'gf!', 'gg', 'gz', 'good fight'}
     same_message_tolerant_word_limit_multiplier = 1.5
     latest_messages_limit = 15
     latest_messages_decay_duration = 60
