@@ -73,3 +73,17 @@ class PunishmentManager(JSONFileConfigurable):
             self.jaserver.say("^7%s has been removed from banned IPs." % ip)
         else:
             self.jaserver.say("^7IP not in banned IPs.")
+
+
+class DummyPunishmentManager(PunishmentManager):
+
+    def __init__(self, jaserver):
+        self.jaserver = jaserver
+        self.banned_names = set()
+        self.banned_ips = set()
+
+    def load_configuration(self):
+        return
+
+    def synchronize(self):
+        return

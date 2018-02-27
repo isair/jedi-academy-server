@@ -7,10 +7,11 @@ from ...models.sayLogLine import SayLogLine
 
 class SayLogLineParser(LogLineParser):
 
-    def __init__(self, jaserver):
+    def __init__(self, jaserver, is_simulation=False):
         LogLineParser.__init__(self)
         assert isinstance(jaserver, JAServer)
         self.jaserver = jaserver
+        self.is_simulation = is_simulation
         # TODO: Read from a configuration file.
         self.watched_words = ["lame", "lamin", "ban", "admin", "glitch"]
 
@@ -52,4 +53,5 @@ class SayLogLineParser(LogLineParser):
                 push_message += "\nLast killer: %s (%d|%s)" % (last_killer.clean_name,
                                                                last_killer.identifier,
                                                                last_killer.ip)
-            PushNotificationManager.send(push_message)
+            if not self.is_simulation:
+                PushNotificationManager.send(push_message)

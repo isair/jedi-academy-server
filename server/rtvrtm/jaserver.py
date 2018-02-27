@@ -97,3 +97,21 @@ class JAServer(object):
             raise Exception("Incorrect rcon password.")
         elif reply != "\xff\xff\xff\xffprint":
             raise Exception("Unexpected error while contacting the server.")
+
+
+class DummyJAServer(JAServer):
+
+    def __init__(self, use_say_only):
+        self.cvars = None
+        self.players = {}
+        self.address = "127.0.0.1"
+        self.bindaddr = "127.0.0.1"
+        self.rcon_pwd = "dummy"
+        self.use_say_only = use_say_only
+        self.message_manager = managers.messageManager.DummyMessageManager(self)
+        self.judgment_manager = managers.judgmentManager.DummyJudgmentManager(self)
+        self.punishment_manager = managers.punishmentManager.DummyPunishmentManager(self)
+
+    def send(self, payload, buffer_size=1024, retry=True):
+        print(payload)
+        return "\xff\xff\xff\xffprint"

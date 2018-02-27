@@ -77,3 +77,12 @@ class MessageManager(JSONFileConfigurable):
                                   prefix=prefix,
                                   use_random_choice=use_random_choice,
                                   random_choice_count=random_choice_count)
+
+
+class DummyMessageManager(MessageManager):
+
+    def __init__(self, jaserver):
+        self.jaserver = jaserver
+
+    def say_timed_messages(self):
+        pass

@@ -19,12 +19,12 @@ class JudgmentManager:
         # If player is in the ban list, kick them.
         if self.jaserver.punishment_manager.is_banned(player):
             print("[JudgmentManager] Banned player login attempt: %s" % player.ip)
-            self.log_incident("banned-entry-attempt", player=player, log_length=5)
+            self._log_incident("banned-entry-attempt", player=player, log_length=5)
             self.jaserver.punishment_manager.kick(player, automatic=True)
         # Check if their name is allowed. Kick them if it's not.
         if player.clean_name in ("admin", "server"):
             print("[JudgmentManager] Admin impersonation attempt: %s" % player.ip)
-            self.log_incident("admin-impersonation-attempt", player=player, log_length=5)
+            self._log_incident("admin-impersonation-attempt", player=player, log_length=5)
             self.jaserver.punishment_manager.kick(player, automatic=True)
 
     def check_kill_info(self, player, previous_lamer_status):
@@ -37,11 +37,11 @@ class JudgmentManager:
                 player = self.jaserver.players.get(baiter_id, None)
                 if player is None:
                     continue
-                self.__notify_about(player,
-                                    public_message="has been kicked for possible baiting. An admin has been notified.",
-                                    private_message="has been kicked for possible baiting.",
-                                    log_message="Possible baiter")
-                self.log_incident("baiter-kick", player=player, log_length=300)
+                self._notify_about(player,
+                                   public_message="has been kicked for possible baiting. An admin has been notified.",
+                                   private_message="has been kicked for possible baiting.",
+                                   log_message="Possible baiter")
+                self._log_incident("baiter-kick", player=player, log_length=300)
                 self.jaserver.punishment_manager.kick(player, automatic=True)
             # Reset kill info.
             player.kill_info.is_baited = False
@@ -56,19 +56,19 @@ class JudgmentManager:
             return
         elif status == KillInfo.LAMER_STATUS_SUSPECTED:
             if status != previous_lamer_status:
-                self.__notify_about(player,
-                                    public_message="is now suspected of laming. To prevent baiting, victims are also being watched. An admin has been notified",
-                                    private_message="has been warned",
-                                    log_message="Suspect",
-                                    include_latest_kills=True)
-                self.log_incident("lamer-warning", player=player, log_length=300)
+                self._notify_about(player,
+                                   public_message="is now suspected of laming. To prevent baiting, victims are also being watched. An admin has been notified",
+                                   private_message="has been warned",
+                                   log_message="Suspect",
+                                   include_latest_kills=True)
+                self._log_incident("lamer-warning", player=player, log_length=300)
             # TODO: Check reports.
         elif status == KillInfo.LAMER_STATUS_KICKABLE:
-            self.__notify_about(player,
-                                public_message="has been kicked for possible laming. An admin has been notified",
-                                private_message="has been kicked for possible laming.",
-                                log_message="Possible lamer")
-            self.log_incident("lamer-kick", player=player, log_length=300)
+            self._notify_about(player,
+                               public_message="has been kicked for possible laming. An admin has been notified",
+                               private_message="has been kicked for possible laming.",
+                               log_message="Possible lamer")
+            self._log_incident("lamer-kick", player=player, log_length=300)
             self.jaserver.punishment_manager.kick(player, automatic=True)
 
     def check_say_info(self, player):
@@ -77,17 +77,17 @@ class JudgmentManager:
         if player.say_info.is_spamming:
             duration = JudgmentManager.spammer_mute_duration
             private_message = "has been muted for spamming\nLast message: %s" % player.say_info.last_message
-            self.__notify_about(player,
-                                public_message="has been muted for %d minutes for spamming" % duration,
-                                private_message=private_message,
-                                log_message="Spammer")
-            self.log_incident("mute", player=player, log_length=100)
+            self._notify_about(player,
+                               public_message="has been muted for %d minutes for spamming" % duration,
+                               private_message=private_message,
+                               log_message="Spammer")
+            self._log_incident("mute", player=player, log_length=100)
             player.say_info.reset()
             self.jaserver.punishment_manager.mute(player, duration=duration, automatic=True)
             return True
         return False
 
-    def __notify_about(self, player, public_message, private_message, log_message, include_latest_kills=False):
+    def _notify_about(self, player, public_message, private_message, log_message, include_latest_kills=False):
         print("[JudgmentManager] %s: %d" % (log_message, player.identifier))
         self.jaserver.svsay("^7%s ^3%s." % (player.name, public_message))
         notification_message = "[%s] %s (%d|%s) %s." % (self.jaserver.gamemode,
@@ -104,7 +104,7 @@ class JudgmentManager:
         PushNotificationManager.send(notification_message)
 
     @staticmethod
-    def log_incident(incident_type, player, log_length):
+    def _log_incident(incident_type, player, log_length):
         assert isinstance(incident_type, str)
         assert isinstance(player, Player)
         assert isinstance(log_length, int)
@@ -126,3 +126,17 @@ class JudgmentManager:
             log_lines = tail(f, lines=log_length)
         with open(destination, "wt") as f:
             f.write(log_lines)
+
+
+class DummyJudgmentManager(JudgmentManager):
+
+    def __init__(self, jaserver):
+        JudgmentManager.__init__(self, jaserver)
+
+    def _notify_about(self, player, public_message, private_message, log_message, include_latest_kills=False):
+        print("[JudgmentManager] %s: %d" % (log_message, player.identifier))
+        self.jaserver.svsay("^7%s ^3%s." % (player.name, public_message))
+
+    @staticmethod
+    def _log_incident(incident_type, player, log_length):
+        return
