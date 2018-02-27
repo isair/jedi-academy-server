@@ -25,7 +25,7 @@ class FileConfigurable(object):
                 threading.Thread(target=self.__try_to_load_configuration__, args=(remaining_attempts - 1,)).start()
             else:
                 print("WARNING: Failed to load configuration file at %s" % self.configuration_file_path)
-                print(e)
+                print(repr(e))
 
     def load_configuration(self):
         raise NotImplementedError
@@ -59,7 +59,7 @@ class SetFileConfigurable(FileConfigurable):
                     f.write("%s\n" % item)
         except Exception as e:
             print("WARNING: Failed to write to list at %s" % self.configuration_file_path)
-            print(e)
+            print(repr(e))
 
 
 class JSONFileConfigurable(FileConfigurable):
@@ -110,4 +110,4 @@ class JSONFileConfigurable(FileConfigurable):
                 json.dump(self.json_dict, f, sort_keys=True, indent=2)
         except Exception as e:
             print("WARNING: Failed to write to json at %s" % self.configuration_file_path)
-            print(e)
+            print(repr(e))

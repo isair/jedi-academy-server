@@ -14,7 +14,7 @@ class LogLineParser:
         try:
             return cls._can_parse_line(LogLine(line))
         except Exception as e:
-            print(e)
+            print(repr(e))
             return False
 
     @classmethod

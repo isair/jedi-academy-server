@@ -19,12 +19,12 @@ class PunishmentManager(JSONFileConfigurable):
             self.banned_names = set(self.json_dict["names"])
         except Exception as e:
             print("WARNING: No names key defined in %s" % self.configuration_file_path)
-            print(e)
+            print(repr(e))
         try:
             self.banned_ips = set(self.json_dict["ips"])
         except Exception as e:
             print("WARNING: No ips key defined in %s" % self.configuration_file_path)
-            print(e)
+            print(repr(e))
 
     def synchronize(self):
         self.json_dict["names"] = list(self.banned_names)

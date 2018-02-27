@@ -51,7 +51,7 @@ class MessageManager(JSONFileConfigurable):
             messages = messages_dict.get("common", []) + messages_dict.get(self.jaserver.gamemode, [])
         except Exception as e:
             print("WARNING: No messages defined under key %s in %s" % (context, self.configuration_file_path))
-            print(e)
+            print(repr(e))
         if use_random_choice:
             random_choice_count = min(random_choice_count, len(messages))
             if random_choice_count > 0:
@@ -63,7 +63,7 @@ class MessageManager(JSONFileConfigurable):
                 self.jaserver.svsay(prefix + message)
             except Exception as e:
                 print("ERROR: Failed to say %s message: %s" % (context, message))
-                print(e)
+                print(repr(e))
 
     def __say_messages_thread(self, context, request_id, prefix="^7", use_random_choice=False, random_choice_count=1):
         assert isinstance(context, str)
