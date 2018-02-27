@@ -32,17 +32,20 @@ class JudgmentManager:
         assert isinstance(previous_lamer_status, int)
         # Check baited status.
         if player.kill_info.is_baited:
-            # Kick baiters.
+            # Forgive baited player.
+            self._notify_about(player,
+                               public_message="has been forgiven due to possible baiting. An admin has been notified.",
+                               private_message="has been forgiven due to possible baiting.",
+                               log_message="Forgiven")
             for baiter_id in player.kill_info.baiter_ids:
-                player = self.jaserver.players.get(baiter_id, None)
-                if player is None:
+                baiter = self.jaserver.players.get(baiter_id, None)
+                if baiter is None:
                     continue
-                self._notify_about(player,
-                                   public_message="has been kicked for possible baiting. An admin has been notified.",
-                                   private_message="has been kicked for possible baiting.",
+                self._notify_about(baiter,
+                                   public_message=None,
+                                   private_message="is possibly baiting.",
                                    log_message="Possible baiter")
-                self._log_incident("baiter-kick", player=player, log_length=300)
-                self.jaserver.punishment_manager.kick(player, automatic=True)
+                self._log_incident("baiting", player=player, log_length=400)
             # Reset kill info.
             player.kill_info.is_baited = False
             player.kill_info.baiter_ids = []
@@ -89,7 +92,8 @@ class JudgmentManager:
 
     def _notify_about(self, player, public_message, private_message, log_message, include_latest_kills=False):
         print("[JudgmentManager] %s: %d" % (log_message, player.identifier))
-        self.jaserver.svsay("^7%s ^3%s." % (player.name, public_message))
+        if public_message is not None:
+            self.jaserver.svsay("^7%s ^3%s." % (player.name, public_message))
         notification_message = "[%s] %s (%d|%s) %s." % (self.jaserver.gamemode,
                                                         player.clean_name,
                                                         player.identifier,
