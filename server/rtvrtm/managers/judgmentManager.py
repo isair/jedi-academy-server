@@ -21,6 +21,8 @@ class JudgmentManager:
             print("[JudgmentManager] Banned player login attempt: %s" % player.ip)
             self._log_incident("banned-entry-attempt", player=player, log_length=5)
             self.jaserver.punishment_manager.kick(player, automatic=True)
+
+    def check_info(self, player):
         # Check if their name is allowed. Kick them if it's not.
         if player.clean_name in ("admin", "server"):
             print("[JudgmentManager] Admin impersonation attempt: %s" % player.ip)

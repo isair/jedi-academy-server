@@ -8,6 +8,7 @@ class InitGameLogLineParser(LogLineParser):
     def __init__(self, jaserver, catch_up=False):
         LogLineParser.__init__(self)
         assert isinstance(jaserver, JAServer)
+        assert isinstance(catch_up, bool)
         self.jaserver = jaserver
         self.catch_up = catch_up
 

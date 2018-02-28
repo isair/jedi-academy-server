@@ -1,6 +1,5 @@
 from __future__ import with_statement
 
-import re
 from collections import defaultdict
 from datetime import datetime
 from optparse import OptionParser
@@ -15,8 +14,9 @@ from time import time, sleep
 from config import Config
 from features import Features
 from jaserver import JAServer
-from models.player import Player
 from parsers.file.catchUpLogFileParser import CatchUpLogFileParser
+from parsers.line.clientConnectLogLineParser import ClientConnectLogLineParser
+from parsers.line.clientUserinfoChangedLogLineParser import ClientUserinfoChangedLogLineParser
 from parsers.line.initGameLogLineParser import InitGameLogLineParser
 from parsers.line.killLogLineParser import KillLogLineParser
 from parsers.line.sayLogLineParser import SayLogLineParser
@@ -134,6 +134,8 @@ def main(argv):
 
     jaserver = JAServer(config.address, config.bindaddr, config.rcon_pwd, config.use_say_only)
 
+    client_connect_log_line_parser = ClientConnectLogLineParser(jaserver)
+    client_userinfo_changed_log_line_parser = ClientUserinfoChangedLogLineParser(jaserver)
     kill_log_line_parser = KillLogLineParser(jaserver)
     say_log_line_parser = SayLogLineParser(jaserver)
     init_game_log_line_parser = InitGameLogLineParser(jaserver)
@@ -284,27 +286,16 @@ def main(argv):
                         Check_Status()  # Check for the status of each feature (RTV/RTM).
                         snipped_line = line[7:-1]
 
-                        if startswith(snipped_line, "ClientConnect: "):
+                        if ClientConnectLogLineParser.can_parse(line):
                             player_id = int(snipped_line[15:17])
-                            player_ip = re.findall(r'[0-9]+(?:\.[0-9]+){3}', snipped_line)[0]
                             if player_id not in jaserver.players:
-                                jaserver.players[player_id] = Player(player_id, player_ip)
                                 rtv_players, rtm_players = [base if base else 1 for base in
                                                             (((len(jaserver.players) / 2) + 1) if not rate else
                                                              int(round(((rate * len(jaserver.players)) / 100.0)))
                                                              for rate in (config.rtv_rate, config.rtm_rate))]
-                        elif startswith(snipped_line, "ClientUserinfoChanged: "):
-                            player_id = int(snipped_line[23:25])
-                            player = jaserver.players.get(player_id)
-
-                            if player is not None:
-                                try:
-                                    player.name = re.findall(r'n\\([^\\]*)', snipped_line)[0]
-                                except Exception:
-                                    player.name = ""
-
-                                jaserver.judgment_manager.check_entry(player)
-
+                            client_connect_log_line_parser.parse(line)
+                        elif ClientUserinfoChangedLogLineParser.can_parse(line):
+                            client_userinfo_changed_log_line_parser.parse(line)
                         elif startswith(snipped_line, "ClientDisconnect: "):
 
                             player_id = int(snipped_line[18:])

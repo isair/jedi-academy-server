@@ -9,10 +9,12 @@ from ...models.logLine import LogLine
 
 class ClientUserinfoChangedLogLineParser(LogLineParser):
 
-    def __init__(self, jaserver):
+    def __init__(self, jaserver, catch_up=False):
         LogLineParser.__init__(self)
         assert isinstance(jaserver, JAServer)
+        assert isinstance(catch_up, bool)
         self.jaserver = jaserver
+        self.catch_up = catch_up
 
     @classmethod
     def _can_parse_line(cls, line):
@@ -28,3 +30,5 @@ class ClientUserinfoChangedLogLineParser(LogLineParser):
                 player.name = re.findall(r'n\\([^\\]*)', line.data)[0]
             except Exception:
                 player.name = ""
+            if not self.catch_up:
+                self.jaserver.judgment_manager.check_info(player)

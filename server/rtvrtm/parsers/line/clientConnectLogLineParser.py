@@ -10,10 +10,12 @@ from ...models.player import Player
 
 class ClientConnectLogLineParser(LogLineParser):
 
-    def __init__(self, jaserver):
+    def __init__(self, jaserver, catch_up=False):
         LogLineParser.__init__(self)
         assert isinstance(jaserver, JAServer)
+        assert isinstance(catch_up, bool)
         self.jaserver = jaserver
+        self.catch_up = catch_up
 
     @classmethod
     def _can_parse_line(cls, line):
@@ -30,3 +32,5 @@ class ClientConnectLogLineParser(LogLineParser):
         else:
             player = Player(player_id, player_ip)
         self.jaserver.players[player_id] = player
+        if not self.catch_up:
+            self.jaserver.judgment_manager.check_entry(player)

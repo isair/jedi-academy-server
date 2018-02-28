@@ -22,8 +22,8 @@ class CatchUpLogFileParser(LogFileParser):
         assert isinstance(log, file)
         start_line_exists = False
         server_start_log_line_parser = ServerStartLogLineParser(self.jaserver)
-        client_connect_log_line_parser = ClientConnectLogLineParser(self.jaserver)
-        client_userinfo_changed_log_line_parser = ClientUserinfoChangedLogLineParser(self.jaserver)
+        client_connect_log_line_parser = ClientConnectLogLineParser(self.jaserver, catch_up=True)
+        client_userinfo_changed_log_line_parser = ClientUserinfoChangedLogLineParser(self.jaserver, catch_up=True)
         client_disconnect_log_line_parser = ClientDisconnectLogLineParser(self.jaserver)
         init_game_log_line_parser = InitGameLogLineParser(self.jaserver, catch_up=True)
         for line in log:
