@@ -7,19 +7,17 @@ from ..line.clientUserinfoChangedLogLineParser import ClientUserinfoChangedLogLi
 from ..line.initGameLogLineParser import InitGameLogLineParser
 from ..line.killLogLineParser import KillLogLineParser
 from ..line.sayLogLineParser import SayLogLineParser
-from ...jaserver import JAServer
+from ...jaserver import DummyJAServer
 from ...utility import fix_line
 
 
 class SimulationLogFileParser(LogFileParser):
 
-    def __init__(self, jaserver):
+    def __init__(self):
         LogFileParser.__init__(self)
-        assert isinstance(jaserver, JAServer)
-        self.jaserver = jaserver
+        self.jaserver = DummyJAServer(use_say_only=False)
 
     def parse(self, log):
-        """Parses every line of the log file, updating jaserver. Returns whether a start line was found or not."""
         assert isinstance(log, file)
         client_connect_log_line_parser = ClientConnectLogLineParser(self.jaserver)
         client_userinfo_changed_log_line_parser = ClientUserinfoChangedLogLineParser(self.jaserver)
