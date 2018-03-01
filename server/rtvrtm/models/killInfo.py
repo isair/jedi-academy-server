@@ -76,7 +76,7 @@ class KillInfo:
         assert isinstance(kill, Kill)
         new_latest_kills = []
         for older_kill in self.latest_kills:
-            if older_kill.time >= kill.time - KillInfo.latest_kills_timeframe and older_kill <= kill.time:
+            if kill.time - KillInfo.latest_kills_timeframe <= older_kill.time <= kill.time:
                 new_latest_kills.append(older_kill)
         self.latest_kills = new_latest_kills
         self.latest_kills.append(kill)
