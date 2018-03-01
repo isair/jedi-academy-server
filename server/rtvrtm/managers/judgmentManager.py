@@ -36,8 +36,8 @@ class JudgmentManager:
         if player.kill_info.is_baited:
             # Forgive baited player.
             self._notify_about(player,
-                               public_message="has been forgiven due to possible baiting. An admin has been notified.",
-                               private_message="has been forgiven due to possible baiting.",
+                               public_message="has been forgiven due to possible baiting. An admin has been notified",
+                               private_message="has been forgiven due to possible baiting",
                                log_message="Forgiven")
             for baiter_id in player.kill_info.baiter_ids:
                 baiter = self.jaserver.players.get(baiter_id, None)
@@ -45,7 +45,7 @@ class JudgmentManager:
                     continue
                 self._notify_about(baiter,
                                    public_message=None,
-                                   private_message="is possibly baiting.",
+                                   private_message="is possibly baiting",
                                    log_message="Possible baiter")
                 self._log_incident("baiting", player=player, log_length=400)
             # Reset kill info.
@@ -71,7 +71,7 @@ class JudgmentManager:
         elif status == KillInfo.LAMER_STATUS_KICKABLE:
             self._notify_about(player,
                                public_message="has been kicked for possible laming. An admin has been notified",
-                               private_message="has been kicked for possible laming.",
+                               private_message="has been kicked for possible laming",
                                log_message="Possible lamer")
             self._log_incident("lamer-kick", player=player, log_length=300)
             self.jaserver.punishment_manager.kick(player, automatic=True)
