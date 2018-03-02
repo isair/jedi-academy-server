@@ -27,8 +27,8 @@ class ClientUserinfoChangedLogLineParser(LogLineParser):
         player = self.jaserver.players.get(player_id)
         if player is not None:
             try:
-                player.name = re.findall(r'n\\([^\\]*)', line.data)[0]
-            except Exception:
-                player.name = ""
+                player.change_name(re.findall(r'n\\([^\\]*)', line.data)[0], line.time)
+            except IndexError:
+                pass
             if not self.catch_up:
                 self.jaserver.judgment_manager.check_info(player)

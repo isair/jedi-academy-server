@@ -15,6 +15,8 @@ class Player(object):
         self.identifier = identifier
         self.ip = ip
         self.name = ""
+        self.clean_name = ""
+        self.name_change_time = 0
 
         self.kill_info = KillInfo()
         self.last_killer = None
@@ -27,9 +29,14 @@ class Player(object):
         self.nomination = None
         self.vote_option = None
 
-    @property
-    def clean_name(self):
-        return remove_color(self.name).lower().strip()
+    def change_name(self, new_name, time):
+        assert isinstance(new_name, str)
+        assert isinstance(time, int)
+        previous_clean_name = self.clean_name
+        self.name = new_name
+        self.clean_name = remove_color(self.name).lower().strip()
+        if self.clean_name != previous_clean_name:
+            self.name_change_time = time
 
     def force_rtv(self, should_enable):
         assert isinstance(should_enable, bool)

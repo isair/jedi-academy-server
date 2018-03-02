@@ -11,6 +11,11 @@ from ..utility import tail
 class JudgmentManager:
     spammer_mute_duration = 10  # in minutes
 
+    lookalike_characters = {
+        "i": "1", "|": "1", "l": "1",
+        "o": "0"
+    }
+
     def __init__(self, jaserver):
         self.jaserver = jaserver
 
@@ -23,11 +28,36 @@ class JudgmentManager:
             self.jaserver.punishment_manager.kick(player, automatic=True)
 
     def check_info(self, player):
+        clean_name = player.clean_name
         # Check if their name is allowed. Kick them if it's not.
-        if player.clean_name in ("admin", "server"):
+        if clean_name in ("admin", "server"):
             print("[JudgmentManager] Admin impersonation attempt: %s" % player.ip)
             self._log_incident("admin-impersonation-attempt", player=player, log_length=5)
             self.jaserver.punishment_manager.kick(player, automatic=True)
+        # Check for impostors.
+        for other_player in self.jaserver.players.values():
+            if player.identifier == other_player.identifier:
+                continue
+            elif len(clean_name) > 0:
+                other_clean_name = other_player.clean_name
+                if len(clean_name) != len(other_clean_name):
+                    # Don't bother checking if clean names aren't the same length.
+                    continue
+                for key, value in JudgmentManager.lookalike_characters.items():
+                    clean_name = clean_name.replace(key, value)
+                    other_clean_name = other_clean_name.replace(key, value)
+                if clean_name != other_clean_name:
+                    continue
+                # If we are here, the names look visually same as each other.
+                impersonator = player
+                if player.name_change_time < other_player.name_change_time:
+                    impersonator = other_player
+                self._notify_about(impersonator,
+                                   public_message="has been kicked for trying to impersonate a player. An admin has been notified",
+                                   private_message="has been kicked for trying to impersonate a player",
+                                   log_message="Impersonator")
+                self._log_incident("player-impersonation-attempt", player=impersonator, log_length=5)
+                self.jaserver.punishment_manager.kick(impersonator, automatic=True)
 
     def check_kill_info(self, player, previous_status):
         assert isinstance(player, Player)
@@ -100,9 +130,9 @@ class JudgmentManager:
                                                             player.ip,
                                                             private_message)
             if include_latest_kills:
-                latest_killed_players = map(lambda kill: self.jaserver.players.get(kill.victim_id, None),
+                latest_killed_players = map(lambda k: self.jaserver.players.get(k.victim_id, None),
                                             reversed(player.kill_info.get_latest_kills()))
-                latest_kills = map(lambda player: "%s (%d|%s)" % (player.clean_name, player.identifier, player.ip),
+                latest_kills = map(lambda p: "%s (%d|%s)" % (p.clean_name, p.identifier, p.ip),
                                    filter(lambda p: p is not None, latest_killed_players))
                 notification_message += "\nLatest kills: " + ", ".join(latest_kills)
             PushNotificationManager.send(notification_message)
