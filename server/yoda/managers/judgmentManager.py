@@ -29,11 +29,10 @@ class JudgmentManager:
             self._log_incident("admin-impersonation-attempt", player=player, log_length=5)
             self.jaserver.punishment_manager.kick(player, automatic=True)
 
-    def check_kill_info(self, player, previous_lamer_status):
+    def check_kill_info(self, player, previous_status):
         assert isinstance(player, Player)
-        assert isinstance(previous_lamer_status, int)
-        # Check baited status.
-        if player.kill_info.is_baited:
+        assert isinstance(previous_status, int)
+        if player.kill_info.status == KillInfo.Status.BAITED:
             # Forgive baited player.
             self._notify_about(player,
                                public_message="has been forgiven due to possible baiting. An admin has been notified",
@@ -49,18 +48,12 @@ class JudgmentManager:
                                    log_message="Possible baiter")
                 self._log_incident("baiting", player=player, log_length=400)
             # Reset kill info.
-            player.kill_info.is_baited = False
-            player.kill_info.baiter_ids = []
-            player.kill_info.double_kills = []
-            # No need to check lamer status.
-            return
-        # Check lamer status.
-        status = player.kill_info.lamer_status
-        if status == KillInfo.LAMER_STATUS_NONE:
+            player.kill_info.reset()
+        elif player.kill_info.status == KillInfo.Status.NONE:
             # TODO: Check reports.
-            return
-        elif status == KillInfo.LAMER_STATUS_SUSPECTED:
-            if status != previous_lamer_status:
+            pass
+        elif player.kill_info.status == KillInfo.Status.SUSPECTED_LAMER:
+            if player.kill_info.status != previous_status:
                 self._notify_about(player,
                                    public_message="is now suspected of laming. To prevent baiting, victims are also being watched. An admin has been notified",
                                    private_message="has been warned",
@@ -68,7 +61,7 @@ class JudgmentManager:
                                    include_latest_kills=True)
                 self._log_incident("lamer-warning", player=player, log_length=300)
             # TODO: Check reports.
-        elif status == KillInfo.LAMER_STATUS_KICKABLE:
+        elif player.kill_info.status == KillInfo.Status.POSSIBLE_LAMER:
             self._notify_about(player,
                                public_message="has been kicked for possible laming. An admin has been notified",
                                private_message="has been kicked for possible laming",
@@ -93,21 +86,26 @@ class JudgmentManager:
         return False
 
     def _notify_about(self, player, public_message, private_message, log_message, include_latest_kills=False):
+        assert isinstance(player, Player)
+        assert isinstance(log_message, str)
         print("[JudgmentManager] %s: %d" % (log_message, player.identifier))
         if public_message is not None:
+            assert isinstance(public_message, str)
             self.jaserver.svsay("^7%s ^3%s." % (player.name, public_message))
-        notification_message = "[%s] %s (%d|%s) %s." % (self.jaserver.gamemode,
-                                                        player.clean_name,
-                                                        player.identifier,
-                                                        player.ip,
-                                                        private_message)
-        if include_latest_kills:
-            latest_killed_players = map(lambda kill: self.jaserver.players.get(kill.victim_id, None),
-                                        reversed(player.kill_info.latest_kills))
-            latest_kills = map(lambda player: "%s (%d|%s)" % (player.clean_name, player.identifier, player.ip),
-                               filter(lambda p: p is not None, latest_killed_players))
-            notification_message += "\nLatest kills: " + ", ".join(latest_kills)
-        PushNotificationManager.send(notification_message)
+        if private_message is not None:
+            assert isinstance(private_message, str)
+            notification_message = "[%s] %s (%d|%s) %s." % (self.jaserver.gamemode,
+                                                            player.clean_name,
+                                                            player.identifier,
+                                                            player.ip,
+                                                            private_message)
+            if include_latest_kills:
+                latest_killed_players = map(lambda kill: self.jaserver.players.get(kill.victim_id, None),
+                                            reversed(player.kill_info.get_latest_kills()))
+                latest_kills = map(lambda player: "%s (%d|%s)" % (player.clean_name, player.identifier, player.ip),
+                                   filter(lambda p: p is not None, latest_killed_players))
+                notification_message += "\nLatest kills: " + ", ".join(latest_kills)
+            PushNotificationManager.send(notification_message)
 
     @staticmethod
     def _log_incident(incident_type, player, log_length):
@@ -140,8 +138,12 @@ class DummyJudgmentManager(JudgmentManager):
         JudgmentManager.__init__(self, jaserver)
 
     def _notify_about(self, player, public_message, private_message, log_message, include_latest_kills=False):
-        print("[JudgmentManager] %s: %d" % (log_message, player.identifier))
-        self.jaserver.svsay("^7%s ^3%s." % (player.name, public_message))
+        JudgmentManager._notify_about(self,
+                                      player,
+                                      public_message=public_message,
+                                      private_message=None,
+                                      log_message=log_message,
+                                      include_latest_kills=include_latest_kills)
 
     @staticmethod
     def _log_incident(incident_type, player, log_length):

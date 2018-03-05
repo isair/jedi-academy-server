@@ -12,8 +12,8 @@ COPY server/libcxa.so.1 /usr/lib/libcxa.so.1
 COPY server/linuxjampded /opt/ja-server/linuxjampded
 COPY server/jampgamei386.so /opt/ja-server/jampgamei386.so
 COPY server/start.sh /opt/ja-server/start.sh
-COPY server/run-rtvrtm.py opt/rtvrtm/run-rtvrtm.py
-COPY server/rtvrtm /opt/rtvrtm/rtvrtm
+COPY server/run-rtvrtm.py opt/yoda/run-rtvrtm.py
+COPY server/yoda /opt/yoda/yoda
 
 # Mount game data volume.
 VOLUME /jedi-academy

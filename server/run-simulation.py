@@ -1,13 +1,13 @@
-#!/usr/bin/python -uSOO
+#!/usr/bin/python
 
 import os
-from sys import argv
+import sys
 
-from rtvrtm.parsers.file.simulationLogFileParser import SimulationLogFileParser
+from yoda.parsers.file.simulationLogFileParser import SimulationLogFileParser
 
 if __name__ == "__main__":
-    directory = argv[1]
-    for root, dirs, file_names in os.walk(directory):
+    logs_directory = sys.argv[1]
+    for root, directories, file_names in os.walk(logs_directory):
         for file_name in file_names:
             if not file_name.lower().endswith('.txt'):
                 continue

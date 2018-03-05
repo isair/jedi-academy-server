@@ -17,6 +17,8 @@ class Player(object):
         self.name = ""
 
         self.kill_info = KillInfo()
+        self.last_killer = None
+
         self.say_info = SayInfo()
 
         self.timer = 0

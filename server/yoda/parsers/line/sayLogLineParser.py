@@ -48,7 +48,7 @@ class SayLogLineParser(LogLineParser):
                                                     player.identifier,
                                                     player.ip,
                                                     say_line.message)
-            last_killer = player.kill_info.last_killer
+            last_killer = player.last_killer
             if last_killer is not None:
                 push_message += "\nLast killer: %s (%d|%s)" % (last_killer.clean_name,
                                                                last_killer.identifier,

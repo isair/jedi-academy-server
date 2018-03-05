@@ -2,7 +2,7 @@
 
 from sys import argv
 
-from rtvrtm.rtvrtm import main
+from yoda.rtvrtm import main
 
 if __name__ == "__main__":
     try:
