@@ -7,7 +7,7 @@ from os import fsync
 from os.path import getsize, basename, dirname, normpath, join as join_path
 from random import choice, sample
 from socket import socket, AF_INET, SOCK_DGRAM, SHUT_RDWR, timeout as socketTimeout, error as socketError
-from sys import platform, setcheckinterval, exit
+from sys import setcheckinterval
 from tarfile import open as TarFile
 from time import time, sleep
 
@@ -21,28 +21,11 @@ from parsers.line.initGameLogLineParser import InitGameLogLineParser
 from parsers.line.killLogLineParser import KillLogLineParser
 from parsers.line.sayLogLineParser import SayLogLineParser
 from utility import SortableDict, DummyTime, fix_line, remove_color, calculate_time
+from yoda.utility import error
 
 VERSION = "4.0"
 SLEEP_INTERVAL = 0.075
 MAPLIST_MAX_SIZE = 750
-
-
-def error(msg):
-    """Error handling function."""
-    print("Failed!\n")
-    print("ERROR: %s" % (msg))
-    if platform == "win32":
-        raw_input("\nPress ENTER to continue...")
-    exit(1)
-
-
-def warning(msg, rehash=False):
-    """Warning function (NON CRITICAL ERROR)."""
-    print("Failed!\n")
-    print("WARNING: %s" % (msg))
-    if rehash:
-        print("WARNING: Rehash aborted!")
-    print("")
 
 
 def switch_default(default_game, current_mode, current_map, jaserver):

@@ -1,5 +1,7 @@
 from __future__ import with_statement
 
+from sys import platform, exit
+
 
 class SortableDict(dict):
     """Dictionary subclass that can return sorted items."""
@@ -15,6 +17,24 @@ class DummyTime(object):
 
     def __iadd__(self, *args):  # Operator overload will return the object itself without any changes
         return self  # on assignment addition operations.
+
+
+def error(msg):
+    """Error handling function."""
+    print("Failed!\n")
+    print("ERROR: %s" % (msg))
+    if platform == "win32":
+        raw_input("\nPress ENTER to continue...")
+    exit(1)
+
+
+def warning(msg, rehash=False):
+    """Warning function (NON CRITICAL ERROR)."""
+    print("Failed!\n")
+    print("WARNING: %s" % (msg))
+    if rehash:
+        print("WARNING: Rehash aborted!")
+    print("")
 
 
 def fix_line(line):

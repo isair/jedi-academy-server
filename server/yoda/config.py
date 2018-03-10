@@ -9,6 +9,8 @@ from sys import platform, exit
 from time import sleep
 from zipfile import ZipFile, BadZipfile
 
+from yoda.utility import warning
+
 
 class Config(object):
     """RTV/RTM configuration class."""
