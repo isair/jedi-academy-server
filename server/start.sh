@@ -23,9 +23,7 @@ fi
 # If an rtvrtm configuration file has been defined and it exists, start rtvrtm.
 RTVRTM_CFG_PATH="/jedi-academy/$RTVRTM_CFG"
 if [ -f "$RTVRTM_CFG_PATH" ]; then
-  cp /jedi-academy/*.txt /opt/yoda
-  mv "$RTVRTM_CFG_PATH" /opt/yoda/rtvrtm.cfg
-  until (sleep 10; python /opt/yoda/run-rtvrtm.py -c /opt/yoda/rtvrtm.cfg); do
+  until (sleep 10; cd /jedi-academy && python /opt/yoda/run-rtvrtm.py -c "$RTVRTM_CFG"); do
     echo "RTVRTM crashed with exit code $?. Restarting..." >&2
   done &
 fi
